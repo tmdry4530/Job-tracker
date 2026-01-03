@@ -1,0 +1,91 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(git:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(echo:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(*rm -rf ~*)",
+      "Bash(*> /dev/*)",
+      "Bash(curl*|*sh)",
+      "Bash(wget*|*sh)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '📋 Loading project context...' && if [ -f docs/sprint-status.yaml ]; then echo '\\n📌 Current Sprint Status:' && cat docs/sprint-status.yaml | head -20; fi && echo '\\n🔄 Git Status:' && git status --short 2>/dev/null || echo 'Not a git repo yet'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE 'rm\\s+-rf|rm\\s+-r\\s+/|>\\/dev\\/'; then echo '{\"decision\": \"block\", \"reason\": \"Dangerous command blocked\"}'; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=$(echo \"$CLAUDE_TOOL_INPUT\" | grep -oE '\"file_path\":\\s*\"[^\"]+\"' | cut -d'\"' -f4); if [[ \"$filepath\" == *\"/src/\"* ]] || [[ \"$filepath\" == *\"/apps/\"* ]]; then echo '\\n💡 Tip: Consider running tests after implementation'; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '\\n✏️ File edited - Remember to update story checklist if task completed'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before stopping, verify: 1) Are all requested tasks complete? 2) Were any files created/modified that need testing? 3) Should sprint-status.yaml be updated? Respond with a brief status summary."
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"\\n✅ Subagent task completed at $(date '+%Y-%m-%d %H:%M:%S')\" >> .claude/workflow-log.txt && echo '📝 Subagent work logged'"
+          }
+        ]
+      }
+    ]
+  }
+}

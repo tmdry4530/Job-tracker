@@ -1,0 +1,69 @@
+# Sprint Status
+# BMAD + Claude Code Workflow Tracker
+
+project: job-application-tracker
+methodology: bmad-method
+track: standard  # quick | standard | enterprise
+
+# Current Phase
+phase: 1  # 1: Analysis, 2: Planning, 3: Solutioning, 4: Implementation
+phase_name: Analysis
+
+# Phase Status
+phases:
+  analysis:
+    status: NOT_STARTED  # NOT_STARTED | IN_PROGRESS | DONE
+    artifacts:
+      project_brief: null  # docs/project-brief.md when created
+  
+  planning:
+    status: NOT_STARTED
+    artifacts:
+      prd: null  # docs/prd.md
+  
+  solutioning:
+    status: NOT_STARTED
+    artifacts:
+      architecture: null  # docs/architecture.md
+      data_model: null
+  
+  implementation:
+    status: NOT_STARTED
+    current_epic: null
+    current_story: null
+
+# Sprint Info (Phase 4)
+sprint:
+  number: 0
+  goal: null
+  start_date: null
+  end_date: null
+
+# Epic Tracking
+epics: []
+# Example when populated:
+# - id: 1
+#   name: Chrome Extension
+#   status: IN_PROGRESS
+#   stories:
+#     - id: "1.1"
+#       title: Plasmo Boilerplate Setup
+#       status: DONE
+#     - id: "1.2"
+#       title: Wanted Parser
+#       status: IN_PROGRESS
+
+# Story Queue
+story_queue: []
+# Example:
+# - story_id: "1.2"
+#   status: IN_PROGRESS
+#   assigned_at: 2025-01-03
+#   dev_notes: "Working on DOM selector extraction"
+
+# Workflow Log
+last_action:
+  timestamp: null
+  agent: null
+  action: null
+  result: null
