@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { Toaster } from 'sonner'
 import './globals.css'
 import { SessionSync } from '@/components/features/auth/session-sync'
 
@@ -20,6 +21,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <SessionSync />
         {children}
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   )

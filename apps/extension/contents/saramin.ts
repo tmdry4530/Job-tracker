@@ -3,7 +3,8 @@ import type { ParsedApplication, ParseMessage } from '~lib/types'
 
 export const config: PlasmoCSConfig = {
   matches: [
-    'https://www.saramin.co.kr/zf_user/applyin-status*',
+    'https://www.saramin.co.kr/zf_user/persons/apply-status-list*',
+    'https://www.saramin.co.kr/zf_user/apply-management/*',
     'https://www.saramin.co.kr/zf_user/apply*',
     'https://www.saramin.co.kr/zf_user/members/apply*',
   ],
@@ -131,15 +132,14 @@ function parseDate(dateText: string): string {
 function parseSaraminApplications(): ParsedApplication[] {
   const applications: ParsedApplication[] = []
 
-  // 사람인은 테이블 또는 리스트 형태로 표시
+  // 사람인 지원현황 리스트
   const selectors = [
+    '.list_status .row._apply_list',
+    '.list_status .row',
+    '.wrap_list .row',
     '.apply_list > li',
     '.list_apply > li',
     'table.list tbody tr',
-    '.content_list > li',
-    '[class*="apply"] li',
-    '[class*="apply"] tr',
-    '.wrap_apply_list li',
   ]
 
   let applicationItems: NodeListOf<Element> | null = null
@@ -178,53 +178,51 @@ function parseSaraminApplications(): ParsedApplication[] {
 function parseApplicationItem(item: Element): ParsedApplication | null {
   // 회사명 추출
   const companyName = extractText(item, [
+    '.corp a',
+    '.corp',
     '.company_name',
     '.corp_name',
-    '.name_company',
     '[class*="company"]',
-    '[class*="corp"]',
-    'td:nth-child(1)',
-    '.tit_company',
   ])
 
   // 포지션명 추출
   const position = extractText(item, [
-    '.job_name',
-    '.title',
-    '.job_title',
-    '[class*="position"]',
-    '[class*="job"]',
-    'td:nth-child(2)',
+    '.job_tit a',
+    '.job_tit',
+    '.tit_job a',
     '.tit_job',
+    '.job_name',
+    '.title a',
+    '.title',
   ])
 
   // 지원일 추출
   const appliedAtText = extractText(item, [
+    '.col_apply_date',
     '.apply_date',
     '.date',
     '[class*="date"]',
-    'td:nth-child(3)',
-    '.date_apply',
     'time',
   ])
 
   // 상태 추출
   const statusText = extractText(item, [
+    '.col_state .state',
+    '.col_state',
     '.apply_status',
     '.status',
     '.state',
     '[class*="status"]',
-    '[class*="state"]',
-    'td:last-child',
-    '.txt_status',
   ])
 
   // URL 추출
   const sourceUrl = extractLink(item, [
+    '.job_tit a',
+    '.tit_job a',
     'a[href*="/zf_info/"]',
     'a[href*="/recruit/"]',
     'a[href*="rec_idx"]',
-    'a.job_link',
+    '.corp a',
     'a',
   ])
 

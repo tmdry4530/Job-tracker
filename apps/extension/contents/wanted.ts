@@ -2,7 +2,10 @@ import type { PlasmoCSConfig } from 'plasmo'
 import type { ParsedApplication, ParseMessage } from '~lib/types'
 
 export const config: PlasmoCSConfig = {
-  matches: ['https://www.wanted.co.kr/cv/applications*'],
+  matches: [
+    'https://www.wanted.co.kr/status/applications*',
+    'https://www.wanted.co.kr/status/applications/*',
+  ],
   run_at: 'document_idle',
 }
 
@@ -116,15 +119,13 @@ function parseDate(dateText: string): string {
 function parseWantedApplications(): ParsedApplication[] {
   const applications: ParsedApplication[] = []
 
-  // 원티드는 지원 목록을 카드/리스트 형태로 표시
-  // 여러 셀렉터 시도 (DOM 구조 변경 대응)
+  // 원티드 지원현황 테이블 행
   const selectors = [
+    '[class*="List_table_tr"]',
+    '[class*="List_table"] > div',
     '[class*="ApplicationCard"]',
     '[class*="application-card"]',
     '[class*="ApplicationItem"]',
-    '[class*="application-item"]',
-    'main ul > li',
-    '[class*="JobCard"]',
   ]
 
   let applicationItems: NodeListOf<Element> | null = null
@@ -162,44 +163,36 @@ function parseWantedApplications(): ParsedApplication[] {
  * 개별 지원 항목 파싱
  */
 function parseApplicationItem(item: Element): ParsedApplication | null {
-  // 텍스트 컨텐츠에서 정보 추출
-  const textContent = item.textContent || ''
-
-  // 회사명 추출 (여러 셀렉터 시도)
+  // 회사명 추출
   const companyName = extractText(item, [
+    '[class*="company_name"]',
     '[class*="company"]',
     '[class*="Company"]',
-    'h3',
-    'h4',
-    '[class*="name"]',
   ])
 
   // 포지션명 추출
   const position = extractText(item, [
+    '[class*="position_name"]',
+    '[class*="job_position"]',
     '[class*="position"]',
-    '[class*="Position"]',
     '[class*="title"]',
-    '[class*="Title"]',
-    'h4',
-    'p',
   ])
 
   // 지원일 추출
   const appliedAtText = extractText(item, [
+    '[class*="create_time"]',
+    '[class*="applied_date"]',
+    '[class*="apply_date"]',
     '[class*="date"]',
-    '[class*="Date"]',
-    '[class*="time"]',
     'time',
-    'span[class*="apply"]',
   ])
 
   // 상태 추출
   const statusText = extractText(item, [
+    '[class*="process"]',
     '[class*="status"]',
-    '[class*="Status"]',
-    '[class*="badge"]',
-    '[class*="Badge"]',
     '[class*="state"]',
+    '[class*="badge"]',
   ])
 
   // URL 추출
@@ -207,6 +200,7 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
     'a[href*="/wd/"]',
     'a[href*="/position/"]',
     'a[href*="/job/"]',
+    'a[href*="/company/"]',
     'a',
   ])
 

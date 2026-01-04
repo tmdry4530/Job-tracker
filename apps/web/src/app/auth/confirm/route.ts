@@ -13,18 +13,28 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type');
-  const next = searchParams.get('next') ?? '/';
+  const code = searchParams.get('code');
+  const next = searchParams.get('next') ?? '/applications';
 
+  const supabase = await createClient();
+
+  // PKCE 플로우: code 파라미터로 세션 교환
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (!error) {
+      return NextResponse.redirect(new URL(next, request.url));
+    }
+  }
+
+  // 레거시 플로우: token_hash + type으로 OTP 검증
   if (token_hash && isValidOtpType(type)) {
-    const supabase = await createClient();
-
     const { error } = await supabase.auth.verifyOtp({
       type,
       token_hash,
     });
 
     if (!error) {
-      // 인증 성공: 리다이렉트
       return NextResponse.redirect(new URL(next, request.url));
     }
   }

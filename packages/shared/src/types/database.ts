@@ -25,18 +25,25 @@ export interface Database {
         Row: Application;
         Insert: ApplicationInsert;
         Update: ApplicationUpdate;
+        Relationships: [];
       };
       jd_summaries: {
         Row: JdSummary;
         Insert: JdSummaryInsert;
         Update: JdSummaryUpdate;
+        Relationships: [];
       };
       interview_questions: {
         Row: InterviewQuestion;
         Insert: InterviewQuestionInsert;
         Update: InterviewQuestionUpdate;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }
 
