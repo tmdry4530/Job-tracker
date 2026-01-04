@@ -26,6 +26,9 @@ importers:
       '@job-tracker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@supabase/supabase-js':
+        specifier: ^2.39.0
+        version: 2.89.0
       plasmo:
         specifier: ^0.89.0
         version: 0.89.5(postcss@8.5.6)(react-dom@18.3.1)(react@18.3.1)

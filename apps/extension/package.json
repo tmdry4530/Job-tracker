@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@job-tracker/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.39.0",
     "plasmo": "^0.89.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
@@ -33,7 +34,8 @@
   "manifest": {
     "host_permissions": [
       "https://www.wanted.co.kr/*",
-      "https://www.saramin.co.kr/*"
+      "https://www.saramin.co.kr/*",
+      "http://localhost:3000/*"
     ],
     "permissions": [
       "storage",

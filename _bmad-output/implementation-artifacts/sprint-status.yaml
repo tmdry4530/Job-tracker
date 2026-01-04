@@ -50,21 +50,21 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: User Authentication & Session Sharing
-  epic-2: in-progress
+  epic-2: done
   2-1-email-password-signup: done
   2-2-email-password-login: done
   2-3-logout: done
-  2-4-dashboard-auth-middleware: backlog
-  2-5-extension-dashboard-session-sharing: backlog
+  2-4-dashboard-auth-middleware: done
+  2-5-extension-dashboard-session-sharing: done
   epic-2-retrospective: optional
 
   # Epic 3: Job Application Data Collection
-  epic-3: backlog
-  3-1-wanted-application-page-parsing: backlog
-  3-2-saramin-application-page-parsing: backlog
-  3-3-parsed-data-backend-sync: backlog
-  3-4-new-application-auto-detection: backlog
-  3-5-extension-popup-ui: backlog
+  epic-3: done
+  3-1-wanted-application-page-parsing: done
+  3-2-saramin-application-page-parsing: done
+  3-3-parsed-data-backend-sync: done
+  3-4-new-application-auto-detection: done
+  3-5-extension-popup-ui: done
   epic-3-retrospective: optional
 
   # Epic 4: Application Dashboard & Management

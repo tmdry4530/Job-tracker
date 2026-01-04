@@ -29,8 +29,8 @@ phases:
   
   implementation:
     status: IN_PROGRESS
-    current_epic: 2
-    current_story: "2.3"
+    current_epic: 4
+    current_story: null
 
 # Sprint Info (Phase 4)
 sprint:
@@ -62,7 +62,7 @@ epics:
         status: DONE
   - id: 2
     name: 사용자 인증 및 세션 공유
-    status: IN_PROGRESS
+    status: DONE
     stories:
       - id: "2.1"
         title: 이메일/비밀번호 회원가입
@@ -73,6 +73,31 @@ epics:
       - id: "2.3"
         title: 로그아웃
         status: DONE
+      - id: "2.4"
+        title: Dashboard 인증 미들웨어
+        status: DONE
+      - id: "2.5"
+        title: Extension-Dashboard 세션 공유
+        status: DONE
+  - id: 3
+    name: 채용 공고 데이터 수집
+    status: DONE
+    stories:
+      - id: "3.1"
+        title: 원티드 지원현황 파싱
+        status: DONE
+      - id: "3.2"
+        title: 사람인 지원현황 파싱
+        status: DONE
+      - id: "3.3"
+        title: 파싱 데이터 백엔드 동기화
+        status: DONE
+      - id: "3.4"
+        title: 새 지원 자동 감지
+        status: DONE
+      - id: "3.5"
+        title: Extension Popup UI
+        status: DONE
 
 # Story Queue
 story_queue: []
@@ -80,6 +105,6 @@ story_queue: []
 # Workflow Log
 last_action:
   timestamp: 2026-01-04
-  agent: code-reviewer
-  action: code-review-2.3
-  result: "Story 2.3 코드 리뷰 완료 - 6개 이슈 중 3개 수정, done 상태로 전환"
+  agent: dev
+  action: epic-3-complete
+  result: "Epic 3 완료 - 5개 Story 모두 구현 (원티드/사람인 파싱, 백엔드 동기화, 자동 감지, Popup UI)"
