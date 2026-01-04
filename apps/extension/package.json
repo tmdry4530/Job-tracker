@@ -1,0 +1,43 @@
+{
+  "name": "extension",
+  "displayName": "Job Application Tracker",
+  "version": "0.0.1",
+  "description": "채용 플랫폼 지원 현황 자동 수집",
+  "author": "Wjdtm",
+  "private": true,
+  "scripts": {
+    "dev": "plasmo dev",
+    "build": "plasmo build",
+    "package": "plasmo package",
+    "lint": "echo 'Extension lint placeholder'",
+    "type-check": "tsc --noEmit",
+    "test": "echo 'Extension test placeholder'",
+    "clean": "rimraf .plasmo build"
+  },
+  "dependencies": {
+    "@job-tracker/shared": "workspace:*",
+    "plasmo": "^0.89.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.0"
+  },
+  "manifest": {
+    "host_permissions": [
+      "https://www.wanted.co.kr/*",
+      "https://www.saramin.co.kr/*"
+    ],
+    "permissions": [
+      "storage",
+      "activeTab"
+    ]
+  }
+}
