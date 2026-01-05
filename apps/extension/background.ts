@@ -211,114 +211,223 @@ async function handleSyncRequest(): Promise<SyncMessage['payload']> {
 }
 
 /**
- * 원티드 API로 검색 → 상세 API로 JD 추출
+ * HTML에서 태그 제거하고 텍스트만 추출
  */
-async function fetchWantedJd(companyName: string, position: string): Promise<{ jdContent: string; sourceUrl: string } | null> {
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // script 제거
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // style 제거
+    .replace(/<[^>]+>/g, ' ') // 태그 제거
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ') // 연속 공백 정리
+    .trim()
+}
+
+/**
+ * 공고 상세 페이지 HTML에서 JD 추출 (Service Worker용 - DOMParser 없이)
+ */
+function parseJdFromHtml(html: string): string | null {
   try {
-    // 회사명 정리 (괄호, 특수문자 제거)
-    const cleanCompanyName = companyName.replace(/[()[\]]/g, ' ').replace(/\s+/g, ' ').trim().split(' ')[0]
+    // 원티드 JD 영역 패턴 (class에 JobDescription, job-description 등 포함)
+    const jdPatterns = [
+      /<section[^>]*class="[^"]*JobDescription[^"]*"[^>]*>([\s\S]*?)<\/section>/i,
+      /<div[^>]*class="[^"]*JobDescription[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      /<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      /<section[^>]*class="[^"]*Description[^"]*"[^>]*>([\s\S]*?)<\/section>/i,
+    ]
 
-    // 1. 검색 API (v4)
-    const searchQuery = encodeURIComponent(cleanCompanyName)
-    const searchApiUrl = `https://www.wanted.co.kr/api/v4/jobs?country=kr&job_sort=job.latest_order&years=-1&locations=all&limit=20&query=${searchQuery}`
+    for (const pattern of jdPatterns) {
+      const match = html.match(pattern)
+      if (match && match[1]) {
+        const text = stripHtmlTags(match[1])
+        if (text.length > 100) {
+          console.log(`[Extension BG] JD found with pattern`)
+          return text.length > 10000 ? text.substring(0, 10000) + '...' : text
+        }
+      }
+    }
 
-    console.log(`[Extension BG] Calling search API: ${searchApiUrl}`)
-    const searchResponse = await fetch(searchApiUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'wanted-user-country': 'KR',
-        'wanted-user-language': 'ko',
+    // 폴백: main 태그 내용 추출
+    const mainMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)
+    if (mainMatch && mainMatch[1]) {
+      const text = stripHtmlTags(mainMatch[1])
+      if (text.length > 200) {
+        console.log(`[Extension BG] JD found in main tag`)
+        return text.length > 10000 ? text.substring(0, 10000) + '...' : text
+      }
+    }
+
+    // 폴백2: __NEXT_DATA__ JSON에서 추출 (Next.js SSR 데이터)
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i)
+    if (nextDataMatch && nextDataMatch[1]) {
+      try {
+        const nextData = JSON.parse(nextDataMatch[1])
+        console.log(`[Extension BG] __NEXT_DATA__ parsed, checking pageProps...`)
+
+        // 다양한 경로 확인
+        const pageProps = nextData?.props?.pageProps
+        console.log(`[Extension BG] pageProps keys: ${pageProps ? Object.keys(pageProps).join(', ') : 'none'}`)
+
+        const job = pageProps?.job || pageProps?.jobDetail || pageProps?.data?.job
+        if (job) {
+          console.log(`[Extension BG] Job object found, keys: ${Object.keys(job).join(', ')}`)
+
+          // detail 객체 또는 직접 필드 확인
+          const detail = job.detail || job
+          console.log(`[Extension BG] Detail keys: ${Object.keys(detail).join(', ')}`)
+
+          // 다양한 필드명 시도
+          const jdParts = [
+            detail.intro || detail.introduction || job.intro,
+            detail.main_tasks || detail.mainTasks || detail.main_task || job.main_tasks,
+            detail.requirements || detail.requirement || job.requirements,
+            detail.preferred_points || detail.preferredPoints || detail.preferred || job.preferred_points,
+            detail.benefits || detail.benefit || detail.welfare || job.benefits,
+            detail.hire_round || detail.hireRound || job.hire_round,
+            detail.skill_tags || job.skill_tags,
+          ].filter(Boolean)
+
+          console.log(`[Extension BG] JD parts found: ${jdParts.length}`)
+          jdParts.forEach((part, i) => {
+            console.log(`[Extension BG] Part ${i}: ${String(part).substring(0, 50)}...`)
+          })
+
+          if (jdParts.length > 0) {
+            const text = jdParts.join('\n\n')
+            console.log(`[Extension BG] JD found in __NEXT_DATA__ (${text.length} chars)`)
+            return text.length > 10000 ? text.substring(0, 10000) + '...' : text
+          }
+        } else {
+          // pageProps 전체 구조 로깅
+          console.log(`[Extension BG] No job object. Dumping pageProps structure:`)
+          console.log(`[Extension BG] ${JSON.stringify(pageProps, null, 2).substring(0, 1000)}`)
+        }
+      } catch (e) {
+        console.error(`[Extension BG] __NEXT_DATA__ parse error:`, e)
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error('[Extension BG] Failed to parse HTML:', error)
+    return null
+  }
+}
+
+/**
+ * 원티드 공고 URL에서 JD 가져오기 (백그라운드 탭 + 스크립트 주입)
+ */
+async function fetchJdFromUrl(sourceUrl: string): Promise<string | null> {
+  if (!sourceUrl || !sourceUrl.includes('wanted.co.kr/wd/')) {
+    return null
+  }
+
+  let tabId: number | undefined
+
+  try {
+    console.log(`[Extension BG] Opening tab for JD: ${sourceUrl}`)
+
+    // 백그라운드 탭 생성
+    const tab = await chrome.tabs.create({ url: sourceUrl, active: false })
+    tabId = tab.id
+
+    if (!tabId) {
+      console.log('[Extension BG] Failed to create tab')
+      return null
+    }
+
+    // 페이지 로드 대기
+    await new Promise<void>((resolve) => {
+      const listener = (updatedTabId: number, info: chrome.tabs.TabChangeInfo) => {
+        if (updatedTabId === tabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener)
+          resolve()
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener)
+
+      // 타임아웃 (10초)
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener)
+        resolve()
+      }, 10000)
+    })
+
+    // 추가 대기 (React 렌더링)
+    await new Promise(resolve => setTimeout(resolve, 2000))
+
+    // 스크립트 주입하여 JD 추출
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        // "상세 정보 더 보기" 버튼 클릭
+        const buttons = document.querySelectorAll('button')
+        for (const btn of buttons) {
+          const text = btn.textContent?.trim() || ''
+          if (text.includes('상세 정보 더 보기') || text.includes('상세정보 더 보기') || text === '더 보기') {
+            btn.click()
+            break
+          }
+        }
+
+        // 클릭 후 대기
+        return new Promise<string | null>((resolve) => {
+          setTimeout(() => {
+            // JD 섹션만 가져오기 (JobDescription 클래스)
+            const jdSection = document.querySelector('[class*="JobDescription_JobDescription"]') ||
+                              document.querySelector('[class*="JobDescription__"]') ||
+                              document.querySelector('.JobDescription')
+
+            if (jdSection) {
+              const text = (jdSection as HTMLElement).innerText?.trim()
+              resolve(text && text.length > 100 ? text : null)
+            } else {
+              // 폴백: JobDetail 영역
+              const detail = document.querySelector('[class*="JobDetail_jobDetail"]')
+              if (detail) {
+                const text = (detail as HTMLElement).innerText?.trim()
+                resolve(text && text.length > 100 ? text : null)
+              } else {
+                resolve(null)
+              }
+            }
+          }, 1000)
+        })
       },
     })
 
-    if (!searchResponse.ok) {
-      console.log(`[Extension BG] Search API failed: ${searchResponse.status}`)
+    // 탭 닫기
+    if (tabId) {
+      await chrome.tabs.remove(tabId)
+    }
+
+    const jdContent = results[0]?.result as string | null
+
+    if (jdContent) {
+      const truncated = jdContent.length > 10000 ? jdContent.substring(0, 10000) + '...' : jdContent
+      console.log(`[Extension BG] JD extracted via injection (${truncated.length} chars)`)
+      return truncated
+    } else {
+      console.log('[Extension BG] Could not extract JD from page')
       return null
     }
-
-    const searchData = await searchResponse.json()
-    const jobs = searchData.data || []
-
-    console.log(`[Extension BG] Found ${jobs.length} jobs`)
-
-    if (jobs.length === 0) {
-      console.log('[Extension BG] No jobs found')
-      return null
-    }
-
-    // 회사명과 포지션이 일치하는 공고 찾기
-    const companyLower = companyName.toLowerCase()
-    const positionLower = position.toLowerCase()
-
-    let matchedJob = jobs.find((job: { company: { name: string }; position: string }) => {
-      const jobCompany = (job.company?.name || '').toLowerCase()
-      const jobPosition = (job.position || '').toLowerCase()
-      // 회사명 일치 + 포지션 일부 일치
-      return jobCompany.includes(cleanCompanyName.toLowerCase()) &&
-             (positionLower.includes(jobPosition.substring(0, 10)) ||
-              jobPosition.includes(positionLower.substring(0, 10)))
-    })
-
-    // 회사명만 일치해도 OK
-    if (!matchedJob) {
-      matchedJob = jobs.find((job: { company: { name: string } }) => {
-        const jobCompany = (job.company?.name || '').toLowerCase()
-        return jobCompany.includes(cleanCompanyName.toLowerCase()) ||
-               companyLower.includes(jobCompany)
-      })
-    }
-
-    if (!matchedJob) {
-      console.log('[Extension BG] No matching job found')
-      return null
-    }
-
-    const jobId = matchedJob.id
-    const jobUrl = `https://www.wanted.co.kr/wd/${jobId}`
-    console.log(`[Extension BG] Matched job: ${matchedJob.company?.name} - ${matchedJob.position}`)
-
-    // 2. 공고 상세 API 호출
-    const detailApiUrl = `https://www.wanted.co.kr/api/v4/jobs/${jobId}`
-    const detailResponse = await fetch(detailApiUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'wanted-user-country': 'KR',
-        'wanted-user-language': 'ko',
-      },
-    })
-
-    if (!detailResponse.ok) {
-      console.log(`[Extension BG] Detail API failed: ${detailResponse.status}`)
-      return null
-    }
-
-    const detailData = await detailResponse.json()
-    const job = detailData.job || detailData
-
-    // JD 내용 조합
-    const jdParts = [
-      job.detail?.intro,
-      job.detail?.main_tasks,
-      job.detail?.requirements,
-      job.detail?.preferred_points,
-      job.detail?.benefits,
-    ].filter(Boolean)
-
-    let jdContent = jdParts.join('\n\n')
-
-    if (!jdContent || jdContent.length < 50) {
-      console.log('[Extension BG] JD content too short')
-      return null
-    }
-
-    if (jdContent.length > 10000) {
-      jdContent = jdContent.substring(0, 10000) + '...'
-    }
-
-    console.log(`[Extension BG] JD fetched successfully (${jdContent.length} chars)`)
-    return { jdContent, sourceUrl: jobUrl }
   } catch (error) {
     console.error('[Extension BG] Failed to fetch JD:', error)
+
+    // 에러 시 탭 정리
+    if (tabId) {
+      try {
+        await chrome.tabs.remove(tabId)
+      } catch {
+        // ignore
+      }
+    }
+
     return null
   }
 }
@@ -342,31 +451,69 @@ async function syncApplicationsToSupabase(
   let syncedCount = 0
   let skippedCount = 0
 
+  // 중복 URL 제거 (같은 공고가 여러 번 처리되는 것 방지)
+  const seen = new Set<string>()
+  const uniqueApplications = applications.filter(app => {
+    const key = app.sourceUrl || `${app.platform}-${app.companyName}-${app.position}`
+    if (seen.has(key)) {
+      console.log(`[Extension BG] Skipping duplicate: ${key}`)
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+
+  console.log(`[Extension BG] Processing ${uniqueApplications.length} unique applications (${applications.length - uniqueApplications.length} duplicates removed)`)
+
   // Batch 처리 (10개씩)
   const batchSize = 10
-  for (let i = 0; i < applications.length; i += batchSize) {
-    const batch = applications.slice(i, i + batchSize)
+  for (let i = 0; i < uniqueApplications.length; i += batchSize) {
+    const batch = uniqueApplications.slice(i, i + batchSize)
 
     for (const app of batch) {
       try {
-        // 중복 확인: platform + company_name + position 기준
-        const { data: existing } = await supabase
-          .from('applications')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('platform', app.platform)
-          .eq('company_name', app.companyName)
-          .eq('position', app.position)
-          .maybeSingle()
+        // 중복 확인: source_url 기준 (DB 유니크 제약)
+        let existing = null
+        if (app.sourceUrl) {
+          const { data } = await supabase
+            .from('applications')
+            .select('id, jd_content')
+            .eq('user_id', user.id)
+            .eq('source_url', app.sourceUrl)
+            .maybeSingle()
+          existing = data
+        }
+
+        // source_url로 못 찾으면 company_name + position으로 시도
+        if (!existing) {
+          const { data } = await supabase
+            .from('applications')
+            .select('id, jd_content')
+            .eq('user_id', user.id)
+            .eq('platform', app.platform)
+            .eq('company_name', app.companyName)
+            .eq('position', app.position)
+            .maybeSingle()
+          existing = data
+        }
 
         if (existing) {
           // 이미 존재하면 업데이트 (상태, URL 등)
+          let jdContent = existing.jd_content
+
+          // JD가 없고 원티드 공고인 경우 JD 가져오기
+          if (!jdContent && app.platform === 'wanted' && app.sourceUrl) {
+            console.log(`[Extension BG] Fetching JD for existing: ${app.companyName} - ${app.position}`)
+            jdContent = await fetchJdFromUrl(app.sourceUrl)
+          }
+
           const { error } = await supabase
             .from('applications')
             .update({
               source_url: app.sourceUrl,
               status: app.status,
               applied_at: app.appliedAt,
+              ...(jdContent && !existing.jd_content ? { jd_content: jdContent } : {}),
             })
             .eq('id', existing.id)
 
@@ -379,17 +526,13 @@ async function syncApplicationsToSupabase(
         } else {
           // 새로 삽입
           let jdContent = app.jdContent || null
-          let sourceUrl = app.sourceUrl
+          const sourceUrl = app.sourceUrl
 
-          // JD 자동 수집은 OpenAPI 키 발급 후 활성화 예정
-          // TODO: 원티드 OpenAPI 연동
-          // if (!jdContent && app.platform === 'wanted') {
-          //   const jdResult = await fetchWantedJd(app.companyName, app.position)
-          //   if (jdResult) {
-          //     jdContent = jdResult.jdContent
-          //     sourceUrl = jdResult.sourceUrl
-          //   }
-          // }
+          // 원티드 공고인 경우 JD 자동 수집
+          if (!jdContent && app.platform === 'wanted' && sourceUrl) {
+            console.log(`[Extension BG] Fetching JD for new: ${app.companyName} - ${app.position}`)
+            jdContent = await fetchJdFromUrl(sourceUrl)
+          }
 
           const { error } = await supabase
             .from('applications')

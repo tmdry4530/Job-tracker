@@ -237,6 +237,50 @@ function stopDetection(): void {
 }
 
 /**
+ * "더 보기" 버튼 클릭하여 전체 내용 펼치기
+ */
+async function expandFullContent(): Promise<boolean> {
+  // "더 보기" 버튼 찾기
+  const expandButtonSelectors = [
+    'button[class*="more"]',
+    'button[class*="More"]',
+    'button[class*="expand"]',
+    'button[class*="Expand"]',
+    '[class*="JobDescription"] button',
+    '[class*="job-description"] button',
+  ]
+
+  for (const selector of expandButtonSelectors) {
+    const buttons = document.querySelectorAll(selector)
+    for (const button of buttons) {
+      const text = button.textContent?.trim() || ''
+      if (text.includes('상세 정보 더 보기') || text.includes('상세정보 더 보기') || text.includes('펼치기')) {
+        console.log('[Wanted JD] Found expand button:', text)
+        ;(button as HTMLElement).click()
+        // 클릭 후 콘텐츠 로드 대기
+        await new Promise(resolve => setTimeout(resolve, 500))
+        return true
+      }
+    }
+  }
+
+  // 텍스트로 직접 찾기
+  const allButtons = document.querySelectorAll('button')
+  for (const button of allButtons) {
+    const text = button.textContent?.trim() || ''
+    if (text.includes('상세 정보 더 보기') || text.includes('상세정보 더 보기') || text === '더 보기') {
+      console.log('[Wanted JD] Found expand button by text:', text)
+      ;(button as HTMLElement).click()
+      await new Promise(resolve => setTimeout(resolve, 500))
+      return true
+    }
+  }
+
+  console.log('[Wanted JD] No expand button found')
+  return false
+}
+
+/**
  * JD 내용 추출
  */
 function extractJdContent(): string {
@@ -282,6 +326,13 @@ async function collectAndSendJd(): Promise<void> {
   // DOM 안정화 대기
   await new Promise(resolve => setTimeout(resolve, 2000))
 
+  // "더 보기" 버튼 클릭하여 전체 내용 펼치기
+  const expanded = await expandFullContent()
+  if (expanded) {
+    // 펼쳐진 후 추가 대기
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
+
   const companyName = extractText([
     'header a[href*="/company/"]',
     'a[href*="/company/"]',
@@ -298,6 +349,8 @@ async function collectAndSendJd(): Promise<void> {
   ])
 
   const jdContent = extractJdContent()
+
+  console.log(`[Wanted JD] Extracted - Company: ${companyName}, Position: ${position}, JD Length: ${jdContent.length}`)
 
   if (!companyName || !position) {
     console.log('[Wanted JD] Could not extract company/position')
