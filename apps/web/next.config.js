@@ -4,6 +4,7 @@ const nextConfig = {
   eslint: {
     dirs: ['src'],
   },
+  transpilePackages: ['@job-tracker/shared'],
 };
 
 module.exports = nextConfig;
