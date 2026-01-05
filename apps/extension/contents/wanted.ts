@@ -154,40 +154,58 @@ function normalizeApiStatus(status: string): string {
 }
 
 /**
- * DOM에서 포지션 목록 추출
+ * DOM에서 회사명-포지션 매핑 추출
  */
-function extractPositionsFromDom(): string[] {
-  const positions: string[] = []
+function extractCompanyPositionMapFromDom(): Map<string, string> {
+  const companyPositionMap = new Map<string, string>()
 
-  // 포지션 셀 선택 (헤더 제외)
-  const positionCells = document.querySelectorAll('[class*="table_td_position"]')
+  // 테이블 행 선택 (헤더 제외)
+  const rows = document.querySelectorAll('[class*="List_List_table_tr"]')
 
-  positionCells.forEach(cell => {
-    const text = cell.textContent?.trim() || ''
-    if (text && text !== '포지션') { // 헤더 제외
-      positions.push(text)
+  rows.forEach((row, index) => {
+    // 첫 번째 행은 헤더일 수 있으므로 스킵
+    if (index === 0) {
+      const headerCheck = row.querySelector('[class*="table_td_company_name"]')
+      if (headerCheck?.textContent?.trim() === '지원 회사') return
+    }
+
+    const companyCell = row.querySelector('[class*="table_td_company_name"]')
+    const positionCell = row.querySelector('[class*="table_td_position"]')
+
+    const companyName = companyCell?.textContent?.trim() || ''
+    const position = positionCell?.textContent?.trim() || ''
+
+    if (companyName && position && companyName !== '지원 회사') {
+      companyPositionMap.set(companyName, position)
+      console.log(`[Wanted Parser] Mapped: ${companyName} -> ${position}`)
     }
   })
 
-  console.log('[Wanted Parser] Extracted positions from DOM:', positions.length)
-  return positions
+  console.log('[Wanted Parser] Extracted company-position map:', companyPositionMap.size)
+  return companyPositionMap
 }
 
 /**
  * 인터셉트된 API 데이터 + DOM 포지션을 ParsedApplication으로 변환
  */
 function convertInterceptedData(data: InterceptedApplication[]): ParsedApplication[] {
-  // DOM에서 포지션 추출
-  const positions = extractPositionsFromDom()
+  // DOM에서 회사명-포지션 매핑 추출
+  const companyPositionMap = extractCompanyPositionMapFromDom()
 
-  return data.map((app, index) => ({
-    companyName: app.company_name || '알 수 없음',
-    position: positions[index] || app.position || '포지션 정보 없음',
-    appliedAt: app.create_time ? app.create_time.split('T')[0] : new Date().toISOString().split('T')[0],
-    status: normalizeApiStatus(app.status),
-    sourceUrl: app.job_id ? `https://www.wanted.co.kr/wd/${app.job_id}` : '',
-    platform: 'wanted' as const,
-  }))
+  return data.map((app) => {
+    const companyName = app.company_name || '알 수 없음'
+    // 회사명으로 포지션 매칭
+    const position = companyPositionMap.get(companyName) || app.position || '포지션 정보 없음'
+
+    return {
+      companyName,
+      position,
+      appliedAt: app.create_time ? app.create_time.split('T')[0] : new Date().toISOString().split('T')[0],
+      status: normalizeApiStatus(app.status),
+      sourceUrl: app.job_id ? `https://www.wanted.co.kr/wd/${app.job_id}` : '',
+      platform: 'wanted' as const,
+    }
+  })
 }
 
 /**

@@ -90,6 +90,8 @@ export interface JdCollectMessage {
     jdContent: string
     sourceUrl: string
     timestamp: number
+    isImageBased?: boolean  // 이미지 기반 공고 여부 (사람인)
+    imageUrls?: string[]    // OCR용 이미지 URL 목록
   }
 }
 

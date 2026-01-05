@@ -5,7 +5,10 @@ export const config: PlasmoCSConfig = {
   matches: [
     'https://www.saramin.co.kr/zf_info/*',
     'https://www.saramin.co.kr/recruit/*',
+    'https://www.saramin.co.kr/zf_user/jobs/relay/view*',
+    'https://www.saramin.co.kr/zf_user/jobs/relay/view-detail*',
   ],
+  all_frames: true,
   run_at: 'document_idle',
 }
 
@@ -235,39 +238,188 @@ function stopDetection(): void {
 }
 
 /**
+ * JD 영역이 이미지 기반인지 확인하고 이미지 URL 반환
+ */
+function checkImageBasedJd(container: Element): { isImage: boolean; imageUrls: string[] } {
+  const images = container.querySelectorAll('img')
+  const textLength = container.textContent?.trim().length || 0
+
+  // 이미지가 있고 텍스트가 매우 짧으면 이미지 기반으로 판단
+  if (images.length > 0 && textLength < 200) {
+    const imageUrls: string[] = []
+    images.forEach((img) => {
+      const src = img.src || img.getAttribute('data-src')
+      if (src && src.startsWith('http')) {
+        imageUrls.push(src)
+      }
+    })
+    console.log(`[Saramin JD] Image-based JD detected: ${images.length} images, ${imageUrls.length} valid URLs`)
+    return { isImage: true, imageUrls }
+  }
+
+  // iframe 기반 JD 확인 (일부 회사는 iframe으로 공고 삽입)
+  const iframes = container.querySelectorAll('iframe')
+  if (iframes.length > 0) {
+    console.log(`[Saramin JD] iframe-based JD detected`)
+    return { isImage: true, imageUrls: [] }
+  }
+
+  return { isImage: false, imageUrls: [] }
+}
+
+/**
+ * iframe 내부 콘텐츠에서 JD 추출
+ */
+function extractFromIframe(iframe: HTMLIFrameElement): { content: string; isImage: boolean; imageUrls: string[] } | null {
+  try {
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+    if (!iframeDoc) {
+      console.log('[Saramin JD] Cannot access iframe document')
+      return null
+    }
+
+    // iframe 내부에서 텍스트 추출
+    const body = iframeDoc.body
+    if (!body) return null
+
+    // 이미지 기반인지 확인
+    const images = body.querySelectorAll('img')
+    const textContent = body.innerText?.trim() || ''
+
+    console.log(`[Saramin JD] iframe content: ${textContent.length} chars, ${images.length} images`)
+
+    // 이미지가 많고 텍스트가 적으면 이미지 기반
+    if (images.length > 0 && textContent.length < 300) {
+      const imageUrls: string[] = []
+      images.forEach((img) => {
+        const src = img.src || img.getAttribute('data-src')
+        if (src && src.startsWith('http')) {
+          imageUrls.push(src)
+        }
+      })
+      return { content: '[이미지 형식 공고]', isImage: true, imageUrls }
+    }
+
+    // 텍스트 기반
+    if (textContent.length > 100) {
+      return { content: textContent, isImage: false, imageUrls: [] }
+    }
+
+    return null
+  } catch (error) {
+    console.error('[Saramin JD] iframe access error:', error)
+    return null
+  }
+}
+
+/**
  * JD 내용 추출
  */
-function extractJdContent(): string {
-  // 사람인 JD 섹션 셀렉터
+function extractJdContent(): { content: string; isImage: boolean; imageUrls: string[] } {
+  // 1. iframe 확인 (사람인은 대부분 iframe 사용)
+  const iframe = document.querySelector('iframe.iframe_content, iframe[id^="iframe_content"]') as HTMLIFrameElement
+  if (iframe) {
+    console.log('[Saramin JD] Found iframe, attempting to extract content')
+    const iframeResult = extractFromIframe(iframe)
+    if (iframeResult) {
+      return iframeResult
+    }
+  }
+
+  // 2. 일반 셀렉터로 시도
   const jdSelectors = [
+    '.jv_cont.jv_detail',
+    '.jv_cont',
     '.job_description',
     '.recruit_content',
-    '.jv_cont',
     '.cont_jv',
     '[class*="job-description"]',
     '.wrap_jv_detail',
     '#job_content',
+    '.user_content',
   ]
 
   for (const selector of jdSelectors) {
     const element = document.querySelector(selector)
-    if (element?.textContent?.trim()) {
-      return element.textContent.trim()
+    if (element) {
+      // 이미지 기반 JD인지 확인
+      const imageCheck = checkImageBasedJd(element)
+      if (imageCheck.isImage) {
+        return { content: '[이미지 형식 공고]', isImage: true, imageUrls: imageCheck.imageUrls }
+      }
+
+      const text = element.textContent?.trim() || ''
+      if (text.length > 100) {
+        return { content: text, isImage: false, imageUrls: [] }
+      }
     }
   }
 
-  // 폴백: 본문 영역에서 텍스트 추출
+  // 3. 폴백: 본문 영역에서 텍스트 추출
   const content = document.querySelector('.wrap_detail') || document.querySelector('main')
   if (content) {
+    const imageCheck = checkImageBasedJd(content)
+    if (imageCheck.isImage) {
+      return { content: '[이미지 형식 공고]', isImage: true, imageUrls: imageCheck.imageUrls }
+    }
+
     const clone = content.cloneNode(true) as HTMLElement
     clone.querySelectorAll('header, button, nav, footer, .btn, .aside').forEach(el => el.remove())
     const text = clone.textContent?.trim() || ''
     if (text.length > 200) {
-      return text
+      return { content: text, isImage: false, imageUrls: [] }
     }
   }
 
-  return ''
+  return { content: '', isImage: false, imageUrls: [] }
+}
+
+/**
+ * iframe 로드 대기
+ */
+async function waitForIframe(): Promise<HTMLIFrameElement | null> {
+  return new Promise((resolve) => {
+    let attempts = 0
+    const maxAttempts = 20
+
+    const check = () => {
+      attempts++
+      const iframe = document.querySelector('iframe.iframe_content, iframe[id^="iframe_content"]') as HTMLIFrameElement
+
+      if (iframe) {
+        // iframe이 로드될 때까지 대기
+        if (iframe.contentDocument?.body) {
+          console.log('[Saramin JD] iframe loaded')
+          resolve(iframe)
+          return
+        }
+
+        // load 이벤트 대기
+        iframe.addEventListener('load', () => {
+          console.log('[Saramin JD] iframe load event fired')
+          resolve(iframe)
+        }, { once: true })
+
+        // 이미 로드되었을 수 있으니 1초 후 재확인
+        setTimeout(() => {
+          if (iframe.contentDocument?.body) {
+            resolve(iframe)
+          }
+        }, 1000)
+        return
+      }
+
+      if (attempts >= maxAttempts) {
+        console.log('[Saramin JD] iframe not found after max attempts')
+        resolve(null)
+        return
+      }
+
+      setTimeout(check, 500)
+    }
+
+    check()
+  })
 }
 
 /**
@@ -276,8 +428,17 @@ function extractJdContent(): string {
 async function collectAndSendJd(): Promise<void> {
   if (jdCollected) return
 
+  // iframe 안에서 실행되면 무시 (부모 페이지에서만 실행)
+  if (window.self !== window.top) {
+    console.log('[Saramin JD] Running inside iframe, skipping')
+    return
+  }
+
   // DOM 안정화 대기
   await new Promise(resolve => setTimeout(resolve, 2000))
+
+  // iframe 로드 대기
+  await waitForIframe()
 
   const companyName = extractText([
     '.company_name',
@@ -294,14 +455,15 @@ async function collectAndSendJd(): Promise<void> {
     'h1',
   ])
 
-  const jdContent = extractJdContent()
+  const jdResult = extractJdContent()
 
   if (!companyName || !position) {
     console.log('[Saramin JD] Could not extract company/position')
     return
   }
 
-  if (!jdContent || jdContent.length < 100) {
+  // 이미지 기반이 아닌 경우에만 텍스트 길이 체크
+  if (!jdResult.content || (!jdResult.isImage && jdResult.content.length < 100)) {
     console.log('[Saramin JD] JD content too short or empty')
     return
   }
@@ -312,17 +474,24 @@ async function collectAndSendJd(): Promise<void> {
       platform: 'saramin',
       companyName,
       position,
-      jdContent,
+      jdContent: jdResult.content,
       sourceUrl: window.location.href,
       timestamp: Date.now(),
+      isImageBased: jdResult.isImage,
+      imageUrls: jdResult.imageUrls,
     },
   }
 
   try {
     await chrome.runtime.sendMessage(message)
     jdCollected = true
-    console.log(`[Saramin JD] JD collected for ${companyName} - ${position}`)
-    showNotification('JD가 수집되었습니다!')
+    console.log(`[Saramin JD] JD collected for ${companyName} - ${position} (isImage: ${jdResult.isImage})`)
+
+    if (jdResult.isImage) {
+      showNotification('이미지 형식 공고가 감지되었습니다')
+    } else {
+      showNotification('JD가 수집되었습니다!')
+    }
   } catch (error) {
     console.error('[Saramin JD] Failed to send JD:', error)
   }

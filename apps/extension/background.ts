@@ -320,6 +320,111 @@ function parseJdFromHtml(html: string): string | null {
 }
 
 /**
+ * 사람인 공고 URL에서 JD 가져오기 (백그라운드 탭 + 스크립트 주입)
+ */
+async function fetchSaraminJd(sourceUrl: string): Promise<{ content: string; isImage: boolean; imageUrls: string[] } | null> {
+  let tabId: number | undefined
+  let windowId: number | undefined
+
+  try {
+    console.log(`[Extension BG] Opening Saramin tab for JD: ${sourceUrl}`)
+
+    // 최소화된 새 창에서 열기 (사용자에게 안보임)
+    const window = await chrome.windows.create({
+      url: sourceUrl,
+      state: 'minimized',
+      focused: false,
+    })
+    windowId = window.id
+    tabId = window.tabs?.[0]?.id
+
+    if (!tabId) {
+      console.log('[Extension BG] Failed to create Saramin tab')
+      return null
+    }
+
+    // 페이지 로드 대기
+    await new Promise<void>((resolve) => {
+      const listener = (updatedTabId: number, info: chrome.tabs.TabChangeInfo) => {
+        if (updatedTabId === tabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener)
+          resolve()
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener)
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener)
+        resolve()
+      }, 15000)
+    })
+
+    // iframe 로드 대기
+    await new Promise(resolve => setTimeout(resolve, 3000))
+
+    // 스크립트 주입하여 JD 추출
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        // iframe 찾기
+        const iframe = document.querySelector('iframe.iframe_content, iframe[id^="iframe_content"]') as HTMLIFrameElement
+        if (!iframe) {
+          return { content: '', isImage: false, imageUrls: [] }
+        }
+
+        try {
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+          if (!iframeDoc?.body) {
+            return { content: '', isImage: false, imageUrls: [] }
+          }
+
+          const images = iframeDoc.body.querySelectorAll('img')
+          const textContent = iframeDoc.body.innerText?.trim() || ''
+
+          // 이미지 기반 판단
+          if (images.length > 0 && textContent.length < 300) {
+            const imageUrls: string[] = []
+            images.forEach((img) => {
+              const src = img.src || img.getAttribute('data-src')
+              if (src && src.startsWith('http')) {
+                imageUrls.push(src)
+              }
+            })
+            return { content: '[이미지 형식 공고]', isImage: true, imageUrls }
+          }
+
+          if (textContent.length > 100) {
+            return { content: textContent, isImage: false, imageUrls: [] }
+          }
+
+          return { content: '', isImage: false, imageUrls: [] }
+        } catch (e) {
+          return { content: '', isImage: false, imageUrls: [] }
+        }
+      },
+    })
+
+    // 창 닫기
+    if (windowId) {
+      await chrome.windows.remove(windowId)
+    }
+
+    const result = results[0]?.result as { content: string; isImage: boolean; imageUrls: string[] } | null
+    if (result && result.content) {
+      console.log(`[Extension BG] Saramin JD extracted: ${result.content.length} chars, isImage: ${result.isImage}`)
+      return result
+    }
+
+    return null
+  } catch (error) {
+    console.error('[Extension BG] Failed to fetch Saramin JD:', error)
+    if (windowId) {
+      try { await chrome.windows.remove(windowId) } catch { /* ignore */ }
+    }
+    return null
+  }
+}
+
+/**
  * 원티드 공고 URL에서 JD 가져오기 (백그라운드 탭 + 스크립트 주입)
  */
 async function fetchJdFromUrl(sourceUrl: string): Promise<string | null> {
@@ -328,13 +433,19 @@ async function fetchJdFromUrl(sourceUrl: string): Promise<string | null> {
   }
 
   let tabId: number | undefined
+  let windowId: number | undefined
 
   try {
     console.log(`[Extension BG] Opening tab for JD: ${sourceUrl}`)
 
-    // 백그라운드 탭 생성
-    const tab = await chrome.tabs.create({ url: sourceUrl, active: false })
-    tabId = tab.id
+    // 최소화된 새 창에서 열기 (사용자에게 안보임)
+    const window = await chrome.windows.create({
+      url: sourceUrl,
+      state: 'minimized',
+      focused: false,
+    })
+    windowId = window.id
+    tabId = window.tabs?.[0]?.id
 
     if (!tabId) {
       console.log('[Extension BG] Failed to create tab')
@@ -401,9 +512,9 @@ async function fetchJdFromUrl(sourceUrl: string): Promise<string | null> {
       },
     })
 
-    // 탭 닫기
-    if (tabId) {
-      await chrome.tabs.remove(tabId)
+    // 창 닫기
+    if (windowId) {
+      await chrome.windows.remove(windowId)
     }
 
     const jdContent = results[0]?.result as string | null
@@ -419,10 +530,10 @@ async function fetchJdFromUrl(sourceUrl: string): Promise<string | null> {
   } catch (error) {
     console.error('[Extension BG] Failed to fetch JD:', error)
 
-    // 에러 시 탭 정리
-    if (tabId) {
+    // 에러 시 창 정리
+    if (windowId) {
       try {
-        await chrome.tabs.remove(tabId)
+        await chrome.windows.remove(windowId)
       } catch {
         // ignore
       }
@@ -484,21 +595,20 @@ async function syncApplicationsToSupabase(
           existing = data
         }
 
-        // source_url로 못 찾으면 company_name + position으로 시도
+        // source_url로 못 찾으면 company_name으로 시도 (같은 회사 다른 포지션도 업데이트)
         if (!existing) {
           const { data } = await supabase
             .from('applications')
-            .select('id, jd_content')
+            .select('id, jd_content, position')
             .eq('user_id', user.id)
             .eq('platform', app.platform)
             .eq('company_name', app.companyName)
-            .eq('position', app.position)
             .maybeSingle()
           existing = data
         }
 
         if (existing) {
-          // 이미 존재하면 업데이트 (상태, URL 등)
+          // 이미 존재하면 업데이트 (포지션, 상태, URL 등)
           let jdContent = existing.jd_content
 
           // JD가 없고 원티드 공고인 경우 JD 가져오기
@@ -510,6 +620,7 @@ async function syncApplicationsToSupabase(
           const { error } = await supabase
             .from('applications')
             .update({
+              position: app.position,  // 포지션 업데이트 추가
               source_url: app.sourceUrl,
               status: app.status,
               applied_at: app.appliedAt,
@@ -527,11 +638,38 @@ async function syncApplicationsToSupabase(
           // 새로 삽입
           let jdContent = app.jdContent || null
           const sourceUrl = app.sourceUrl
+          let isImageBased = false
+          let imageUrls: string[] = []
 
           // 원티드 공고인 경우 JD 자동 수집
           if (!jdContent && app.platform === 'wanted' && sourceUrl) {
-            console.log(`[Extension BG] Fetching JD for new: ${app.companyName} - ${app.position}`)
+            console.log(`[Extension BG] Fetching JD for new (Wanted): ${app.companyName} - ${app.position}`)
             jdContent = await fetchJdFromUrl(sourceUrl)
+          }
+
+          // 사람인 공고인 경우 JD 자동 수집
+          if (!jdContent && app.platform === 'saramin' && sourceUrl) {
+            console.log(`[Extension BG] Fetching JD for new (Saramin): ${app.companyName} - ${app.position}`)
+            const saraminResult = await fetchSaraminJd(sourceUrl)
+            if (saraminResult) {
+              jdContent = saraminResult.content
+              isImageBased = saraminResult.isImage
+              imageUrls = saraminResult.imageUrls
+
+              // 이미지 기반이면 OCR 시도
+              if (isImageBased && imageUrls.length > 0) {
+                const { data: sessionData } = await supabase.auth.getSession()
+                const accessToken = sessionData?.session?.access_token
+                if (accessToken) {
+                  console.log(`[Extension BG] Attempting OCR for ${imageUrls.length} images`)
+                  const ocrText = await callOcrApi(imageUrls, accessToken)
+                  if (ocrText) {
+                    jdContent = ocrText
+                    console.log(`[Extension BG] OCR success: ${ocrText.length} chars`)
+                  }
+                }
+              }
+            }
           }
 
           const { error } = await supabase
@@ -571,6 +709,40 @@ async function syncApplicationsToSupabase(
 }
 
 /**
+ * OCR API 호출 (이미지 기반 JD용)
+ */
+async function callOcrApi(imageUrls: string[], accessToken: string): Promise<string | null> {
+  try {
+    const apiUrl = process.env.PLASMO_PUBLIC_WEB_URL || 'http://localhost:3000'
+    const response = await fetch(`${apiUrl}/api/ocr`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ imageUrls }),
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.text()
+      console.error('[Extension BG] OCR API error:', response.status, errorBody)
+      return null
+    }
+
+    const result = await response.json()
+    if (result.success && result.data?.text) {
+      console.log(`[Extension BG] OCR success: ${result.data.text.length} chars`)
+      return result.data.text
+    }
+
+    return null
+  } catch (error) {
+    console.error('[Extension BG] OCR API call failed:', error)
+    return null
+  }
+}
+
+/**
  * JD 수집 처리 - 기존 레코드에 JD 업데이트
  */
 async function handleJdCollected(message: JdCollectMessage): Promise<{ success: boolean; error?: string }> {
@@ -589,6 +761,23 @@ async function handleJdCollected(message: JdCollectMessage): Promise<{ success: 
       return { success: false, error: '사용자 인증 실패' }
     }
 
+    // 세션 토큰 가져오기
+    const { data: sessionData } = await supabase.auth.getSession()
+    const accessToken = sessionData?.session?.access_token
+
+    // 이미지 기반 JD인 경우 OCR 시도
+    let jdContent = payload.jdContent
+    if (payload.isImageBased && payload.imageUrls && payload.imageUrls.length > 0 && accessToken) {
+      console.log(`[Extension BG] Attempting OCR for ${payload.imageUrls.length} images`)
+      const ocrText = await callOcrApi(payload.imageUrls, accessToken)
+      if (ocrText) {
+        jdContent = ocrText
+        console.log(`[Extension BG] OCR extracted ${ocrText.length} chars`)
+      } else {
+        console.log('[Extension BG] OCR failed, keeping original content')
+      }
+    }
+
     // 기존 레코드 찾기 (platform + company_name + position)
     const { data: existing } = await supabase
       .from('applications')
@@ -604,7 +793,7 @@ async function handleJdCollected(message: JdCollectMessage): Promise<{ success: 
       const { error } = await supabase
         .from('applications')
         .update({
-          jd_content: payload.jdContent,
+          jd_content: jdContent,
           source_url: payload.sourceUrl,
         })
         .eq('id', existing.id)

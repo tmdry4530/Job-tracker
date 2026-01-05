@@ -9,6 +9,7 @@ import {
 
 const SummarizeRequestSchema = z.object({
   applicationId: z.string().uuid('유효하지 않은 ID입니다'),
+  regenerate: z.boolean().optional(),
 })
 
 const ApplicationIdSchema = z.string().uuid('유효하지 않은 ID입니다')
@@ -36,22 +37,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { applicationId } = parsed.data
+    const { applicationId, regenerate } = parsed.data
 
-    // 기존 요약 확인 (캐시)
-    const { data: existingSummary } = await supabase
-      .from('jd_summaries')
-      .select('*')
-      .eq('application_id', applicationId)
-      .eq('user_id', user.id)
-      .single()
+    // regenerate가 true면 기존 요약 삭제
+    if (regenerate) {
+      await supabase
+        .from('jd_summaries')
+        .delete()
+        .eq('application_id', applicationId)
+        .eq('user_id', user.id)
+    } else {
+      // 기존 요약 확인 (캐시)
+      const { data: existingSummary } = await supabase
+        .from('jd_summaries')
+        .select('*')
+        .eq('application_id', applicationId)
+        .eq('user_id', user.id)
+        .single()
 
-    if (existingSummary) {
-      return NextResponse.json({
-        success: true,
-        data: existingSummary,
-        cached: true,
-      })
+      if (existingSummary) {
+        return NextResponse.json({
+          success: true,
+          data: existingSummary,
+          cached: true,
+        })
+      }
     }
 
     // Application 조회

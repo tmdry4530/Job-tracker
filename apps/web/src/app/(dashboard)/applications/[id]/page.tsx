@@ -27,6 +27,7 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
   }
 
   const hasJdContent = Boolean(application.jd_content)
+  const isImageBasedJd = application.jd_content === '[이미지 형식 공고]'
 
   return (
     <div className="space-y-6">
@@ -89,37 +90,19 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
         </CardContent>
       </Card>
 
-      {/* JD & AI 분석 탭 */}
-      <Tabs defaultValue="jd" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="jd">원본 JD</TabsTrigger>
+      {/* AI 분석 탭 */}
+      <Tabs defaultValue="summary" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="summary">AI 요약</TabsTrigger>
           <TabsTrigger value="questions">면접 준비</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="jd" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Job Description</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {application.jd_content ? (
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <pre className="whitespace-pre-wrap text-sm font-sans bg-muted p-4 rounded-lg">
-                    {application.jd_content}
-                  </pre>
-                </div>
-              ) : (
-                <p className="text-muted-foreground">JD 정보가 없습니다.</p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="summary" className="mt-4">
           <JdSummary
             applicationId={application.id}
             hasJdContent={hasJdContent}
+            isImageBasedJd={isImageBasedJd}
+            sourceUrl={application.source_url}
           />
         </TabsContent>
 
