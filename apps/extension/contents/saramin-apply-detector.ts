@@ -1,5 +1,5 @@
 import type { PlasmoCSConfig } from 'plasmo'
-import type { ParsedApplication, ParseMessage } from '~lib/types'
+import type { ParsedApplication, ParseMessage, JdCollectMessage } from '~lib/types'
 
 export const config: PlasmoCSConfig = {
   matches: [
@@ -10,13 +10,15 @@ export const config: PlasmoCSConfig = {
 }
 
 /**
- * 사람인 지원완료 자동 감지
+ * 사람인 공고 페이지 JD 수집 + 지원완료 자동 감지
+ * - 페이지 로드 시 JD 내용 수집
  * - 채용공고 페이지에서 지원 완료 모달/메시지 감지
  * - MutationObserver로 DOM 변화 감지
  */
 
 let isDetecting = false
 let observer: MutationObserver | null = null
+let jdCollected = false
 
 /**
  * 지원 완료 메시지 감지
@@ -232,5 +234,100 @@ function stopDetection(): void {
   console.log('[Saramin Detector] Detection stopped')
 }
 
-// 페이지 로드 시 감지 시작
+/**
+ * JD 내용 추출
+ */
+function extractJdContent(): string {
+  // 사람인 JD 섹션 셀렉터
+  const jdSelectors = [
+    '.job_description',
+    '.recruit_content',
+    '.jv_cont',
+    '.cont_jv',
+    '[class*="job-description"]',
+    '.wrap_jv_detail',
+    '#job_content',
+  ]
+
+  for (const selector of jdSelectors) {
+    const element = document.querySelector(selector)
+    if (element?.textContent?.trim()) {
+      return element.textContent.trim()
+    }
+  }
+
+  // 폴백: 본문 영역에서 텍스트 추출
+  const content = document.querySelector('.wrap_detail') || document.querySelector('main')
+  if (content) {
+    const clone = content.cloneNode(true) as HTMLElement
+    clone.querySelectorAll('header, button, nav, footer, .btn, .aside').forEach(el => el.remove())
+    const text = clone.textContent?.trim() || ''
+    if (text.length > 200) {
+      return text
+    }
+  }
+
+  return ''
+}
+
+/**
+ * JD 수집 및 전송
+ */
+async function collectAndSendJd(): Promise<void> {
+  if (jdCollected) return
+
+  // DOM 안정화 대기
+  await new Promise(resolve => setTimeout(resolve, 2000))
+
+  const companyName = extractText([
+    '.company_name',
+    '.name_company',
+    '[class*="corp_name"]',
+    '.tit_company',
+  ])
+
+  const position = extractText([
+    '.job_tit',
+    '.tit_job',
+    'h1.tit',
+    '.recruit_title',
+    'h1',
+  ])
+
+  const jdContent = extractJdContent()
+
+  if (!companyName || !position) {
+    console.log('[Saramin JD] Could not extract company/position')
+    return
+  }
+
+  if (!jdContent || jdContent.length < 100) {
+    console.log('[Saramin JD] JD content too short or empty')
+    return
+  }
+
+  const message: JdCollectMessage = {
+    type: 'JD_COLLECTED',
+    payload: {
+      platform: 'saramin',
+      companyName,
+      position,
+      jdContent,
+      sourceUrl: window.location.href,
+      timestamp: Date.now(),
+    },
+  }
+
+  try {
+    await chrome.runtime.sendMessage(message)
+    jdCollected = true
+    console.log(`[Saramin JD] JD collected for ${companyName} - ${position}`)
+    showNotification('JD가 수집되었습니다!')
+  } catch (error) {
+    console.error('[Saramin JD] Failed to send JD:', error)
+  }
+}
+
+// 페이지 로드 시 JD 수집 및 지원 감지 시작
+collectAndSendJd()
 startDetection()

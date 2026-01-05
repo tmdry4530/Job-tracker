@@ -4,6 +4,7 @@ import { Suspense } from 'react'
 import { SearchInput } from './search-input'
 import { PlatformFilter } from './platform-filter'
 import { StatusFilter } from './status-filter'
+import { DuplicateFilter } from './duplicate-filter'
 import { Skeleton } from '@/components/ui/skeleton'
 
 function FiltersSkeleton() {
@@ -12,6 +13,7 @@ function FiltersSkeleton() {
       <Skeleton className="h-10 w-[300px]" />
       <Skeleton className="h-10 w-[140px]" />
       <Skeleton className="h-10 w-[140px]" />
+      <Skeleton className="h-5 w-[100px]" />
     </div>
   )
 }
@@ -23,6 +25,7 @@ export function ApplicationFilters() {
         <SearchInput />
         <PlatformFilter />
         <StatusFilter />
+        <DuplicateFilter />
       </Suspense>
     </div>
   )

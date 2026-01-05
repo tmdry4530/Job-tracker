@@ -1,5 +1,5 @@
 import { createExtensionSupabaseClient, setStoredSession, getStoredSession, isSessionExpired } from '~lib/supabase'
-import type { StoredSession, SessionMessage, ParseMessage, ParsedApplication, ExtensionMessage, SyncMessage } from '~lib/types'
+import type { StoredSession, SessionMessage, ParseMessage, ParsedApplication, ExtensionMessage, SyncMessage, JdCollectMessage } from '~lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export {}
@@ -34,12 +34,17 @@ function initSupabaseWithSession(session: StoredSession | null) {
  * Content Script 및 Popup에서 메시지 수신
  */
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+  console.log('[Extension BG] Message received:', message.type)
+
   if (message.type === 'SESSION_UPDATE') {
     handleSessionUpdate((message as SessionMessage).session)
     sendResponse({ success: true })
   } else if (message.type === 'PARSE_COMPLETED' || message.type === 'PARSE_FAILED') {
     handleParseResult(message as ParseMessage)
     sendResponse({ success: true })
+  } else if (message.type === 'JD_COLLECTED') {
+    handleJdCollected(message as JdCollectMessage).then(sendResponse)
+    return true // 비동기 응답
   } else if (message.type === 'SYNC_REQUEST') {
     handleSyncRequest().then(sendResponse)
     return true // 비동기 응답
@@ -206,6 +211,119 @@ async function handleSyncRequest(): Promise<SyncMessage['payload']> {
 }
 
 /**
+ * 원티드 API로 검색 → 상세 API로 JD 추출
+ */
+async function fetchWantedJd(companyName: string, position: string): Promise<{ jdContent: string; sourceUrl: string } | null> {
+  try {
+    // 회사명 정리 (괄호, 특수문자 제거)
+    const cleanCompanyName = companyName.replace(/[()[\]]/g, ' ').replace(/\s+/g, ' ').trim().split(' ')[0]
+
+    // 1. 검색 API (v4)
+    const searchQuery = encodeURIComponent(cleanCompanyName)
+    const searchApiUrl = `https://www.wanted.co.kr/api/v4/jobs?country=kr&job_sort=job.latest_order&years=-1&locations=all&limit=20&query=${searchQuery}`
+
+    console.log(`[Extension BG] Calling search API: ${searchApiUrl}`)
+    const searchResponse = await fetch(searchApiUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'wanted-user-country': 'KR',
+        'wanted-user-language': 'ko',
+      },
+    })
+
+    if (!searchResponse.ok) {
+      console.log(`[Extension BG] Search API failed: ${searchResponse.status}`)
+      return null
+    }
+
+    const searchData = await searchResponse.json()
+    const jobs = searchData.data || []
+
+    console.log(`[Extension BG] Found ${jobs.length} jobs`)
+
+    if (jobs.length === 0) {
+      console.log('[Extension BG] No jobs found')
+      return null
+    }
+
+    // 회사명과 포지션이 일치하는 공고 찾기
+    const companyLower = companyName.toLowerCase()
+    const positionLower = position.toLowerCase()
+
+    let matchedJob = jobs.find((job: { company: { name: string }; position: string }) => {
+      const jobCompany = (job.company?.name || '').toLowerCase()
+      const jobPosition = (job.position || '').toLowerCase()
+      // 회사명 일치 + 포지션 일부 일치
+      return jobCompany.includes(cleanCompanyName.toLowerCase()) &&
+             (positionLower.includes(jobPosition.substring(0, 10)) ||
+              jobPosition.includes(positionLower.substring(0, 10)))
+    })
+
+    // 회사명만 일치해도 OK
+    if (!matchedJob) {
+      matchedJob = jobs.find((job: { company: { name: string } }) => {
+        const jobCompany = (job.company?.name || '').toLowerCase()
+        return jobCompany.includes(cleanCompanyName.toLowerCase()) ||
+               companyLower.includes(jobCompany)
+      })
+    }
+
+    if (!matchedJob) {
+      console.log('[Extension BG] No matching job found')
+      return null
+    }
+
+    const jobId = matchedJob.id
+    const jobUrl = `https://www.wanted.co.kr/wd/${jobId}`
+    console.log(`[Extension BG] Matched job: ${matchedJob.company?.name} - ${matchedJob.position}`)
+
+    // 2. 공고 상세 API 호출
+    const detailApiUrl = `https://www.wanted.co.kr/api/v4/jobs/${jobId}`
+    const detailResponse = await fetch(detailApiUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'wanted-user-country': 'KR',
+        'wanted-user-language': 'ko',
+      },
+    })
+
+    if (!detailResponse.ok) {
+      console.log(`[Extension BG] Detail API failed: ${detailResponse.status}`)
+      return null
+    }
+
+    const detailData = await detailResponse.json()
+    const job = detailData.job || detailData
+
+    // JD 내용 조합
+    const jdParts = [
+      job.detail?.intro,
+      job.detail?.main_tasks,
+      job.detail?.requirements,
+      job.detail?.preferred_points,
+      job.detail?.benefits,
+    ].filter(Boolean)
+
+    let jdContent = jdParts.join('\n\n')
+
+    if (!jdContent || jdContent.length < 50) {
+      console.log('[Extension BG] JD content too short')
+      return null
+    }
+
+    if (jdContent.length > 10000) {
+      jdContent = jdContent.substring(0, 10000) + '...'
+    }
+
+    console.log(`[Extension BG] JD fetched successfully (${jdContent.length} chars)`)
+    return { jdContent, sourceUrl: jobUrl }
+  } catch (error) {
+    console.error('[Extension BG] Failed to fetch JD:', error)
+    return null
+  }
+}
+
+/**
  * Supabase에 지원 내역 동기화
  */
 async function syncApplicationsToSupabase(
@@ -231,28 +349,67 @@ async function syncApplicationsToSupabase(
 
     for (const app of batch) {
       try {
-        // Upsert: source_url 기준으로 중복 확인
-        const { error } = await supabase
+        // 중복 확인: platform + company_name + position 기준
+        const { data: existing } = await supabase
           .from('applications')
-          .upsert({
-            user_id: user.id,
-            platform: app.platform,
-            company_name: app.companyName,
-            position: app.position,
-            source_url: app.sourceUrl,
-            jd_content: app.jdContent || null,
-            status: app.status,
-            applied_at: app.appliedAt,
-          }, {
-            onConflict: 'user_id,source_url',
-            ignoreDuplicates: false,
-          })
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('platform', app.platform)
+          .eq('company_name', app.companyName)
+          .eq('position', app.position)
+          .maybeSingle()
 
-        if (error) {
-          console.error('[Extension BG] Upsert error:', error)
-          skippedCount++
+        if (existing) {
+          // 이미 존재하면 업데이트 (상태, URL 등)
+          const { error } = await supabase
+            .from('applications')
+            .update({
+              source_url: app.sourceUrl,
+              status: app.status,
+              applied_at: app.appliedAt,
+            })
+            .eq('id', existing.id)
+
+          if (error) {
+            console.error('[Extension BG] Update error:', error)
+            skippedCount++
+          } else {
+            syncedCount++
+          }
         } else {
-          syncedCount++
+          // 새로 삽입
+          let jdContent = app.jdContent || null
+          let sourceUrl = app.sourceUrl
+
+          // JD 자동 수집은 OpenAPI 키 발급 후 활성화 예정
+          // TODO: 원티드 OpenAPI 연동
+          // if (!jdContent && app.platform === 'wanted') {
+          //   const jdResult = await fetchWantedJd(app.companyName, app.position)
+          //   if (jdResult) {
+          //     jdContent = jdResult.jdContent
+          //     sourceUrl = jdResult.sourceUrl
+          //   }
+          // }
+
+          const { error } = await supabase
+            .from('applications')
+            .insert({
+              user_id: user.id,
+              platform: app.platform,
+              company_name: app.companyName,
+              position: app.position,
+              source_url: sourceUrl,
+              jd_content: jdContent,
+              status: app.status,
+              applied_at: app.appliedAt,
+            })
+
+          if (error) {
+            console.error('[Extension BG] Insert error:', error)
+            skippedCount++
+          } else {
+            syncedCount++
+          }
         }
       } catch (error) {
         console.error('[Extension BG] Sync item error:', error)
@@ -267,5 +424,62 @@ async function syncApplicationsToSupabase(
     syncedCount,
     skippedCount,
     timestamp: Date.now(),
+  }
+}
+
+/**
+ * JD 수집 처리 - 기존 레코드에 JD 업데이트
+ */
+async function handleJdCollected(message: JdCollectMessage): Promise<{ success: boolean; error?: string }> {
+  const { payload } = message
+  console.log(`[Extension BG] JD collected for ${payload.companyName} - ${payload.position}`)
+
+  if (!supabase) {
+    console.log('[Extension BG] Supabase not initialized, cannot update JD')
+    return { success: false, error: '로그인이 필요합니다' }
+  }
+
+  try {
+    // 현재 사용자 ID 가져오기
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { success: false, error: '사용자 인증 실패' }
+    }
+
+    // 기존 레코드 찾기 (platform + company_name + position)
+    const { data: existing } = await supabase
+      .from('applications')
+      .select('id, jd_content')
+      .eq('user_id', user.id)
+      .eq('platform', payload.platform)
+      .eq('company_name', payload.companyName)
+      .eq('position', payload.position)
+      .maybeSingle()
+
+    if (existing) {
+      // 기존 레코드 JD 업데이트
+      const { error } = await supabase
+        .from('applications')
+        .update({
+          jd_content: payload.jdContent,
+          source_url: payload.sourceUrl,
+        })
+        .eq('id', existing.id)
+
+      if (error) {
+        console.error('[Extension BG] JD update error:', error)
+        return { success: false, error: error.message }
+      }
+
+      console.log(`[Extension BG] JD updated for existing record: ${existing.id}`)
+      return { success: true }
+    } else {
+      // 지원 기록이 없으면 JD 저장 안 함
+      console.log(`[Extension BG] No application record found for: ${payload.companyName} - ${payload.position}`)
+      return { success: false, error: '지원 기록이 없습니다' }
+    }
+  } catch (error) {
+    console.error('[Extension BG] JD collection error:', error)
+    return { success: false, error: error instanceof Error ? error.message : '알 수 없는 오류' }
   }
 }

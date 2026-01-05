@@ -1,5 +1,5 @@
 import type { PlasmoCSConfig } from 'plasmo'
-import type { ParsedApplication, ParseMessage } from '~lib/types'
+import type { ParsedApplication, ParseMessage, JdCollectMessage } from '~lib/types'
 
 export const config: PlasmoCSConfig = {
   matches: [
@@ -11,13 +11,15 @@ export const config: PlasmoCSConfig = {
 }
 
 /**
- * 원티드 지원완료 자동 감지
+ * 원티드 공고 페이지 JD 수집 + 지원완료 자동 감지
+ * - 페이지 로드 시 JD 내용 수집
  * - 채용공고 페이지에서 지원 완료 모달/메시지 감지
  * - MutationObserver로 DOM 변화 감지
  */
 
 let isDetecting = false
 let observer: MutationObserver | null = null
+let jdCollected = false
 
 /**
  * 지원 완료 메시지 감지
@@ -234,5 +236,168 @@ function stopDetection(): void {
   console.log('[Wanted Detector] Detection stopped')
 }
 
-// 페이지 로드 시 감지 시작
+/**
+ * JD 내용 추출
+ */
+function extractJdContent(): string {
+  // 원티드 JD 섹션 셀렉터
+  const jdSelectors = [
+    '[class*="JobDescription"]',
+    '[class*="job-description"]',
+    '[class*="JobContent"]',
+    '[class*="job_description"]',
+    '[data-cy="job-description"]',
+    'section[class*="Description"]',
+    '.job-content',
+  ]
+
+  for (const selector of jdSelectors) {
+    const element = document.querySelector(selector)
+    if (element?.textContent?.trim()) {
+      return element.textContent.trim()
+    }
+  }
+
+  // 폴백: main 영역에서 텍스트 추출
+  const main = document.querySelector('main')
+  if (main) {
+    // 헤더, 버튼 등 제외하고 본문만
+    const clone = main.cloneNode(true) as HTMLElement
+    clone.querySelectorAll('header, button, nav, footer').forEach(el => el.remove())
+    const text = clone.textContent?.trim() || ''
+    if (text.length > 200) {
+      return text
+    }
+  }
+
+  return ''
+}
+
+/**
+ * JD 수집 및 전송
+ */
+async function collectAndSendJd(): Promise<void> {
+  if (jdCollected) return
+
+  // DOM 안정화 대기
+  await new Promise(resolve => setTimeout(resolve, 2000))
+
+  const companyName = extractText([
+    'header a[href*="/company/"]',
+    'a[href*="/company/"]',
+    '[class*="company-name"]',
+    '[class*="company_name"]',
+  ])
+
+  const position = extractText([
+    '[class*="JobHeader"] h1',
+    '[class*="job-header"] h1',
+    'h1[class*="title"]',
+    'main h1',
+    'h1',
+  ])
+
+  const jdContent = extractJdContent()
+
+  if (!companyName || !position) {
+    console.log('[Wanted JD] Could not extract company/position')
+    return
+  }
+
+  if (!jdContent || jdContent.length < 100) {
+    console.log('[Wanted JD] JD content too short or empty')
+    return
+  }
+
+  const message: JdCollectMessage = {
+    type: 'JD_COLLECTED',
+    payload: {
+      platform: 'wanted',
+      companyName,
+      position,
+      jdContent,
+      sourceUrl: window.location.href,
+      timestamp: Date.now(),
+    },
+  }
+
+  try {
+    console.log('[Wanted JD] Sending message to background...')
+    const response = await chrome.runtime.sendMessage(message)
+    console.log('[Wanted JD] Response from background:', response)
+    jdCollected = true
+    console.log(`[Wanted JD] JD collected for ${companyName} - ${position}`)
+    showNotification('JD가 수집되었습니다!')
+  } catch (error) {
+    console.error('[Wanted JD] Failed to send JD:', error)
+    console.error('[Wanted JD] chrome.runtime.lastError:', chrome.runtime.lastError)
+  }
+}
+
+/**
+ * URL 변경 감지 (SPA 네비게이션 대응)
+ */
+function setupUrlChangeDetection(): void {
+  let lastUrl = window.location.href
+
+  // popstate 이벤트 (뒤로가기/앞으로가기)
+  window.addEventListener('popstate', () => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href
+      handleUrlChange()
+    }
+  })
+
+  // pushState/replaceState 감지를 위한 MutationObserver
+  const urlObserver = new MutationObserver(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href
+      handleUrlChange()
+    }
+  })
+
+  urlObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+  })
+
+  // History API 오버라이드
+  const originalPushState = history.pushState
+  const originalReplaceState = history.replaceState
+
+  history.pushState = function (...args) {
+    originalPushState.apply(this, args)
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href
+      handleUrlChange()
+    }
+  }
+
+  history.replaceState = function (...args) {
+    originalReplaceState.apply(this, args)
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href
+      handleUrlChange()
+    }
+  }
+}
+
+/**
+ * URL 변경 시 처리
+ */
+function handleUrlChange(): void {
+  const url = window.location.href
+
+  // 공고 상세 페이지인 경우 JD 수집
+  if (url.includes('/wd/') || url.includes('/position/')) {
+    console.log('[Wanted Detector] URL changed to job detail page:', url)
+    jdCollected = false // 새 페이지이므로 리셋
+    collectAndSendJd()
+    startDetection()
+  }
+}
+
+// 페이지 로드 시 JD 수집 및 지원 감지 시작
+collectAndSendJd()
 startDetection()
+setupUrlChangeDetection()

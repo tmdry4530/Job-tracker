@@ -176,52 +176,45 @@ function parseSaraminApplications(): ParsedApplication[] {
  * 개별 지원 항목 파싱
  */
 function parseApplicationItem(item: Element): ParsedApplication | null {
-  // 회사명 추출
+  // 회사명 추출 (사람인 실제 클래스: .corp a)
   const companyName = extractText(item, [
     '.corp a',
     '.corp',
     '.company_name',
-    '.corp_name',
     '[class*="company"]',
   ])
 
-  // 포지션명 추출
+  // 포지션명 추출 (사람인 실제 클래스: .recruit .division)
   const position = extractText(item, [
+    '.recruit .division',
+    '.recruit a',
     '.job_tit a',
     '.job_tit',
-    '.tit_job a',
-    '.tit_job',
-    '.job_name',
     '.title a',
-    '.title',
   ])
 
-  // 지원일 추출
+  // 지원일 추출 (사람인 실제 클래스: .col_date)
   const appliedAtText = extractText(item, [
+    '.col_date',
     '.col_apply_date',
     '.apply_date',
-    '.date',
     '[class*="date"]',
-    'time',
   ])
 
-  // 상태 추출
+  // 상태 추출 (사람인 실제 클래스: .status .txt_status)
   const statusText = extractText(item, [
+    '.status .txt_status',
+    '.txt_status',
     '.col_state .state',
-    '.col_state',
     '.apply_status',
     '.status',
-    '.state',
-    '[class*="status"]',
   ])
 
   // URL 추출
   const sourceUrl = extractLink(item, [
-    '.job_tit a',
-    '.tit_job a',
-    'a[href*="/zf_info/"]',
-    'a[href*="/recruit/"]',
+    '.recruit a',
     'a[href*="rec_idx"]',
+    'a[href*="/zf_info/"]',
     '.corp a',
     'a',
   ])

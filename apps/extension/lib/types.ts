@@ -79,6 +79,21 @@ export interface SyncMessage {
 }
 
 /**
+ * JD 수집 메시지 (공고 상세 페이지에서 수집)
+ */
+export interface JdCollectMessage {
+  type: 'JD_COLLECTED'
+  payload: {
+    platform: 'wanted' | 'saramin'
+    companyName: string
+    position: string
+    jdContent: string
+    sourceUrl: string
+    timestamp: number
+  }
+}
+
+/**
  * Popup에서 Background로 보내는 요청 메시지
  */
 export interface PopupMessage {
@@ -88,4 +103,4 @@ export interface PopupMessage {
 /**
  * 모든 Extension 메시지 타입 유니온
  */
-export type ExtensionMessage = SessionMessage | ParseMessage | SyncMessage | PopupMessage
+export type ExtensionMessage = SessionMessage | ParseMessage | SyncMessage | PopupMessage | JdCollectMessage
