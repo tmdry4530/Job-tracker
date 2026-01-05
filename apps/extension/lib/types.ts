@@ -1,4 +1,19 @@
 /**
+ * Extension 타입 정의
+ */
+
+/** 지원 플랫폼 */
+export type Platform = 'wanted' | 'saramin'
+
+/** 지원 상태 */
+export type ApplicationStatus =
+  | 'applied'
+  | 'document_passed'
+  | 'interview'
+  | 'accepted'
+  | 'rejected'
+
+/**
  * Extension에서 저장하는 세션 정보 타입
  */
 export interface StoredSession {
@@ -38,21 +53,33 @@ export interface ParsedApplication {
   status: string
   sourceUrl: string
   jdContent?: string
-  platform: 'wanted' | 'saramin'
+  platform: Platform
+}
+
+/**
+ * 파싱 성공 결과
+ */
+export interface ParseSuccessPayload {
+  platform: Platform
+  applications: ParsedApplication[]
+  timestamp: number
+}
+
+/**
+ * 파싱 실패 결과
+ */
+export interface ParseFailPayload {
+  platform: Platform
+  error: string
+  timestamp: number
 }
 
 /**
  * 파싱 결과 메시지 (Content Script → Background)
  */
-export interface ParseMessage {
-  type: 'PARSE_COMPLETED' | 'PARSE_FAILED'
-  payload: {
-    platform: 'wanted' | 'saramin'
-    applications?: ParsedApplication[]
-    error?: string
-    timestamp: number
-  }
-}
+export type ParseMessage =
+  | { type: 'PARSE_COMPLETED'; payload: ParseSuccessPayload }
+  | { type: 'PARSE_FAILED'; payload: ParseFailPayload }
 
 /**
  * 파싱 상태 저장용
@@ -66,16 +93,33 @@ export interface ParseState {
 }
 
 /**
- * 동기화 요청/결과 메시지
+ * 동기화 성공 결과
+ */
+export interface SyncSuccessResult {
+  syncedCount: number
+  skippedCount: number
+  timestamp: number
+}
+
+/**
+ * 동기화 실패 결과
+ */
+export interface SyncErrorResult {
+  error: string
+  timestamp: number
+}
+
+/**
+ * 동기화 결과 (성공 또는 실패)
+ */
+export type SyncResult = SyncSuccessResult | SyncErrorResult
+
+/**
+ * 동기화 메시지
  */
 export interface SyncMessage {
   type: 'SYNC_REQUEST' | 'SYNC_COMPLETED' | 'SYNC_FAILED'
-  payload?: {
-    syncedCount?: number
-    skippedCount?: number
-    error?: string
-    timestamp: number
-  }
+  payload?: SyncResult
 }
 
 /**
@@ -84,14 +128,14 @@ export interface SyncMessage {
 export interface JdCollectMessage {
   type: 'JD_COLLECTED'
   payload: {
-    platform: 'wanted' | 'saramin'
+    platform: Platform
     companyName: string
     position: string
     jdContent: string
     sourceUrl: string
     timestamp: number
-    isImageBased?: boolean  // 이미지 기반 공고 여부 (사람인)
-    imageUrls?: string[]    // OCR용 이미지 URL 목록
+    isImageBased?: boolean
+    imageUrls?: string[]
   }
 }
 
@@ -105,4 +149,23 @@ export interface PopupMessage {
 /**
  * 모든 Extension 메시지 타입 유니온
  */
-export type ExtensionMessage = SessionMessage | ParseMessage | SyncMessage | PopupMessage | JdCollectMessage
+export type ExtensionMessage =
+  | SessionMessage
+  | ParseMessage
+  | SyncMessage
+  | PopupMessage
+  | JdCollectMessage
+
+/**
+ * 타입 가드: SyncResult가 성공인지 확인
+ */
+export function isSyncSuccess(result: SyncResult): result is SyncSuccessResult {
+  return 'syncedCount' in result
+}
+
+/**
+ * 타입 가드: SyncResult가 실패인지 확인
+ */
+export function isSyncError(result: SyncResult): result is SyncErrorResult {
+  return 'error' in result
+}

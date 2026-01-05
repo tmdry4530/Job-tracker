@@ -1,5 +1,9 @@
 import type { PlasmoCSConfig } from 'plasmo'
-import type { ParsedApplication, ParseMessage } from '~lib/types'
+import type { ParsedApplication } from '~lib/types'
+import { showOverlay, hideOverlay } from '~lib/overlay'
+import { waitForDOM, waitForSelector, extractText, extractLink, parseDate } from '~lib/dom-utils'
+import { normalizeWantedStatus, normalizeApiStatus } from '~lib/status-normalizer'
+import { sendParseResult } from '~lib/parse-result'
 
 export const config: PlasmoCSConfig = {
   matches: [
@@ -30,7 +34,6 @@ let interceptedApiData: InterceptedApplication[] = []
 
 // 인터셉터(MAIN world)에서 postMessage로 보내는 데이터 수신
 window.addEventListener('message', (event: MessageEvent) => {
-  // 같은 window에서 온 메시지만 처리
   if (event.source !== window) return
 
   if (event.data?.type === 'WANTED_APPLICATIONS_INTERCEPTED' && event.data?.applications) {
@@ -39,131 +42,21 @@ window.addEventListener('message', (event: MessageEvent) => {
   }
 })
 
-/**
- * DOM이 안정화될 때까지 대기
- */
-async function waitForDOM(): Promise<void> {
-  return new Promise((resolve) => {
-    // 이미 로드된 경우
-    if (document.readyState === 'complete') {
-      // 추가 대기 (React 렌더링 완료)
-      setTimeout(resolve, 1000)
-      return
-    }
-
-    // 로드 완료 대기
-    window.addEventListener('load', () => {
-      setTimeout(resolve, 1000)
-    })
-  })
-}
-
-/**
- * 지원 목록이 렌더링될 때까지 대기
- */
-async function waitForApplicationList(): Promise<boolean> {
-  return new Promise((resolve) => {
-    let checkCount = 0
-    const maxChecks = 20 // 최대 10초 대기
-
-    const checkInterval = setInterval(() => {
-      checkCount++
-
-      // 지원 목록 컨테이너 확인 (원티드 실제 클래스: List_List_table__*)
-      const container = document.querySelector('[class*="List_List_table"]') ||
-                       document.querySelector('[class*="List_table"]') ||
-                       document.querySelector('[class*="ApplicationList"]')
-
-      console.log(`[Wanted Parser] Checking for container (${checkCount}/${maxChecks}):`, !!container)
-
-      if (container || checkCount >= maxChecks) {
-        clearInterval(checkInterval)
-        resolve(!!container)
-      }
-    }, 500)
-  })
-}
-
-/**
- * 지원 상태 텍스트를 표준 상태로 변환
- */
-function normalizeStatus(statusText: string): string {
-  const statusMap: Record<string, string> = {
-    '접수': 'applied',
-    '지원완료': 'applied',
-    '지원 완료': 'applied',
-    '서류통과': 'document_passed',
-    '서류 통과': 'document_passed',
-    '서류 합격': 'document_passed',
-    '면접진행': 'interview',
-    '면접 진행': 'interview',
-    '면접': 'interview',
-    '최종합격': 'accepted',
-    '최종 합격': 'accepted',
-    '합격': 'accepted',
-    '불합격': 'rejected',
-    '탈락': 'rejected',
-    '서류 불합격': 'rejected',
-  }
-
-  const normalized = statusText.trim()
-  return statusMap[normalized] || 'applied'
-}
-
-/**
- * 날짜 텍스트를 ISO 형식으로 변환
- */
-function parseDate(dateText: string): string {
-  // 다양한 형식 처리: "2024.01.15", "2024-01-15", "2026. 1. 3", "1월 15일"
-  const text = dateText.trim()
-
-  // YYYY.MM.DD 또는 YYYY-MM-DD 형식 (공백 허용: "2026. 1. 3")
-  const fullDateMatch = text.match(/(\d{4})[.\-/]\s*(\d{1,2})[.\-/]?\s*(\d{1,2})/)
-  if (fullDateMatch) {
-    const [, year, month, day] = fullDateMatch
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
-  }
-
-  // MM.DD 또는 M월 D일 형식 (현재 연도 가정)
-  const shortDateMatch = text.match(/(\d{1,2})[월.\-/]?\s*(\d{1,2})[일]?/)
-  if (shortDateMatch) {
-    const [, month, day] = shortDateMatch
-    const year = new Date().getFullYear()
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
-  }
-
-  // 파싱 실패 시 현재 날짜
-  console.log('[Wanted Parser] Date parsing failed for:', text)
-  return new Date().toISOString().split('T')[0]
-}
-
-/**
- * API 상태값을 표준 상태로 변환
- */
-function normalizeApiStatus(status: string): string {
-  const statusMap: Record<string, string> = {
-    'complete': 'applied',
-    'applied': 'applied',
-    'hiring_complete': 'accepted',
-    'accepted': 'accepted',
-    'rejected': 'rejected',
-    'interview': 'interview',
-    'document_passed': 'document_passed',
-  }
-  return statusMap[status?.toLowerCase()] || 'applied'
-}
+/** 지원 목록 컨테이너 셀렉터 */
+const APPLICATION_LIST_SELECTORS = [
+  '[class*="List_List_table"]',
+  '[class*="List_table"]',
+  '[class*="ApplicationList"]',
+]
 
 /**
  * DOM에서 회사명-포지션 매핑 추출
  */
 function extractCompanyPositionMapFromDom(): Map<string, string> {
   const companyPositionMap = new Map<string, string>()
-
-  // 테이블 행 선택 (헤더 제외)
   const rows = document.querySelectorAll('[class*="List_List_table_tr"]')
 
   rows.forEach((row, index) => {
-    // 첫 번째 행은 헤더일 수 있으므로 스킵
     if (index === 0) {
       const headerCheck = row.querySelector('[class*="table_td_company_name"]')
       if (headerCheck?.textContent?.trim() === '지원 회사') return
@@ -177,11 +70,9 @@ function extractCompanyPositionMapFromDom(): Map<string, string> {
 
     if (companyName && position && companyName !== '지원 회사') {
       companyPositionMap.set(companyName, position)
-      console.log(`[Wanted Parser] Mapped: ${companyName} -> ${position}`)
     }
   })
 
-  console.log('[Wanted Parser] Extracted company-position map:', companyPositionMap.size)
   return companyPositionMap
 }
 
@@ -189,12 +80,10 @@ function extractCompanyPositionMapFromDom(): Map<string, string> {
  * 인터셉트된 API 데이터 + DOM 포지션을 ParsedApplication으로 변환
  */
 function convertInterceptedData(data: InterceptedApplication[]): ParsedApplication[] {
-  // DOM에서 회사명-포지션 매핑 추출
   const companyPositionMap = extractCompanyPositionMapFromDom()
 
   return data.map((app) => {
     const companyName = app.company_name || '알 수 없음'
-    // 회사명으로 포지션 매칭
     const position = companyPositionMap.get(companyName) || app.position || '포지션 정보 없음'
 
     return {
@@ -278,21 +167,18 @@ function parseWantedApplicationsFromDom(): ParsedApplication[] {
  * 개별 지원 항목 파싱
  */
 function parseApplicationItem(item: Element): ParsedApplication | null {
-  // 회사명 추출 (원티드 실제 클래스: List_List_table_td_company_name__*)
   const companyName = extractText(item, [
     '[class*="table_td_company_name"]',
     '[class*="company_name"]',
     '[class*="company"]',
   ])
 
-  // 포지션명 추출 (원티드 실제 클래스: List_List_table_td_position__*)
   const position = extractText(item, [
     '[class*="table_td_position"]',
     '[class*="position"]',
     '[class*="title"]',
   ])
 
-  // 지원일 추출 (원티드 실제 클래스: List_List_table_td_create_time__*)
   const appliedAtText = extractText(item, [
     '[class*="table_td_create_time"]',
     '[class*="create_time"]',
@@ -300,7 +186,6 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
     'time',
   ])
 
-  // 상태 추출 (원티드 실제 클래스: List_List_table_td_status__*)
   const statusText = extractText(item, [
     '[class*="table_td_status"]',
     '[class*="status"]',
@@ -308,19 +193,16 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
     '[class*="state"]',
   ])
 
-  // URL 추출 (원티드는 a 태그 없음)
   let sourceUrl = extractLink(item, [
     'a[href*="/wd/"]',
     'a[href*="/position/"]',
     'a',
   ])
 
-  // 필수 필드 검증
   if (!companyName && !position) {
     return null
   }
 
-  // 고유 URL 생성: 개별 링크가 없으면 원티드 검색 URL로 생성
   if (!sourceUrl) {
     const searchQuery = encodeURIComponent(`${companyName} ${position}`)
     sourceUrl = `https://www.wanted.co.kr/search?query=${searchQuery}`
@@ -330,121 +212,9 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
     companyName: companyName || '알 수 없음',
     position: position || '알 수 없음',
     appliedAt: parseDate(appliedAtText),
-    status: normalizeStatus(statusText),
+    status: normalizeWantedStatus(statusText),
     sourceUrl,
     platform: 'wanted',
-  }
-}
-
-/**
- * 여러 셀렉터로 텍스트 추출
- */
-function extractText(parent: Element, selectors: string[]): string {
-  for (const selector of selectors) {
-    const element = parent.querySelector(selector)
-    if (element?.textContent?.trim()) {
-      return element.textContent.trim()
-    }
-  }
-  return ''
-}
-
-/**
- * 여러 셀렉터로 링크 추출
- */
-function extractLink(parent: Element, selectors: string[]): string {
-  for (const selector of selectors) {
-    const element = parent.querySelector(selector) as HTMLAnchorElement
-    if (element?.href) {
-      return element.href
-    }
-  }
-  return ''
-}
-
-/**
- * 파싱 상태 오버레이 표시
- */
-function showOverlay(message: string, type: 'loading' | 'success' | 'error' = 'loading'): HTMLElement {
-  // 기존 오버레이 제거
-  const existing = document.getElementById('job-tracker-overlay')
-  if (existing) {
-    existing.remove()
-  }
-
-  const colors = {
-    loading: '#3B82F6',
-    success: '#10B981',
-    error: '#EF4444',
-  }
-
-  const icons = {
-    loading: '📋',
-    success: '✓',
-    error: '✗',
-  }
-
-  const overlay = document.createElement('div')
-  overlay.id = 'job-tracker-overlay'
-  overlay.innerHTML = `
-    <div style="
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: ${colors[type]};
-      color: white;
-      padding: 12px 20px;
-      border-radius: 8px;
-      z-index: 10000;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    ">
-      <span>${icons[type]}</span>
-      <span>${message}</span>
-    </div>
-  `
-  document.body.appendChild(overlay)
-
-  return overlay
-}
-
-/**
- * 오버레이 자동 제거
- */
-function hideOverlay(delay: number = 3000): void {
-  setTimeout(() => {
-    const overlay = document.getElementById('job-tracker-overlay')
-    if (overlay) {
-      overlay.style.transition = 'opacity 0.3s'
-      overlay.style.opacity = '0'
-      setTimeout(() => overlay.remove(), 300)
-    }
-  }, delay)
-}
-
-/**
- * Background로 파싱 결과 전송
- */
-async function sendParseResult(applications: ParsedApplication[], error?: string): Promise<void> {
-  const message: ParseMessage = {
-    type: error ? 'PARSE_FAILED' : 'PARSE_COMPLETED',
-    payload: {
-      platform: 'wanted',
-      applications: error ? undefined : applications,
-      error,
-      timestamp: Date.now(),
-    },
-  }
-
-  try {
-    await chrome.runtime.sendMessage(message)
-    console.log('[Wanted Parser] Result sent to background:', message.type)
-  } catch (err) {
-    console.error('[Wanted Parser] Failed to send result:', err)
   }
 }
 
@@ -454,20 +224,17 @@ async function sendParseResult(applications: ParsedApplication[], error?: string
 async function main(): Promise<void> {
   console.log('[Wanted Parser] 원티드 지원현황 페이지 감지')
 
-  // 로딩 오버레이 표시
   showOverlay('지원 내역 수집 중...')
 
   try {
-    // DOM 로드 대기
     await waitForDOM()
 
-    // 지원 목록 렌더링 대기
-    const hasApplicationList = await waitForApplicationList()
+    const hasApplicationList = await waitForSelector(APPLICATION_LIST_SELECTORS)
 
     if (!hasApplicationList) {
       showOverlay('지원 내역이 없거나 페이지를 찾을 수 없습니다', 'error')
       hideOverlay()
-      await sendParseResult([], '지원 목록을 찾을 수 없습니다')
+      await sendParseResult('wanted', [], '지원 목록을 찾을 수 없습니다')
       return
     }
 
@@ -489,17 +256,15 @@ async function main(): Promise<void> {
     if (applications.length === 0) {
       showOverlay('지원 내역이 없습니다', 'success')
       hideOverlay()
-      await sendParseResult([])
+      await sendParseResult('wanted', [])
       return
     }
 
-    // 성공 표시
     const sourceType = apiData.length > 0 ? 'API' : 'DOM'
     showOverlay(`${applications.length}개의 지원 내역을 찾았습니다 (${sourceType})`, 'success')
     hideOverlay()
 
-    // Background로 전송
-    await sendParseResult(applications)
+    await sendParseResult('wanted', applications)
 
     console.log('[Wanted Parser] Parsed applications:', applications)
 
@@ -510,7 +275,7 @@ async function main(): Promise<void> {
     showOverlay(`파싱 실패: ${errorMessage}`, 'error')
     hideOverlay()
 
-    await sendParseResult([], errorMessage)
+    await sendParseResult('wanted', [], errorMessage)
   }
 }
 
