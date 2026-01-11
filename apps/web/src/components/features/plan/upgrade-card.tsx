@@ -1,12 +1,24 @@
 'use client'
 
+import { useState } from 'react'
 import { Check, Sparkles } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { PLAN_LIMITS } from '@job-tracker/shared'
+import { PLAN_LIMITS, PREMIUM_PRICE } from '@job-tracker/shared'
+import { PaymentButton } from '@/components/features/payment'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
-export function UpgradeCard() {
+interface UpgradeCardProps {
+  userId: string
+  userEmail: string
+}
+
+export function UpgradeCard({ userId, userEmail }: UpgradeCardProps) {
+  const [error, setError] = useState<string | null>(null)
   const premiumFeatures = PLAN_LIMITS.premium.features
+
+  const handleError = (errorMessage: string) => {
+    setError(errorMessage)
+  }
 
   return (
     <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-800">
@@ -29,19 +41,20 @@ export function UpgradeCard() {
           ))}
         </ul>
 
-        <Button
-          className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
-          onClick={() => {
-            // TODO: 결제 페이지로 이동 또는 결제 모달 표시
-            alert('결제 기능은 추후 연동 예정입니다.')
-          }}
-        >
-          <Sparkles className="h-4 w-4 mr-2" />
-          Premium 시작하기
-        </Button>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <PaymentButton
+          userId={userId}
+          userEmail={userEmail}
+          onError={handleError}
+        />
 
         <p className="text-xs text-center text-muted-foreground">
-          언제든지 취소 가능 | 7일 무료 체험
+          월 {PREMIUM_PRICE.monthly.toLocaleString()}원 | 언제든지 취소 가능
         </p>
       </CardContent>
     </Card>

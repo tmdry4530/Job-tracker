@@ -20,6 +20,10 @@ type EnvConfig = {
   SENTRY_ORG?: string
   SENTRY_PROJECT?: string
   SENTRY_AUTH_TOKEN?: string
+
+  // Toss Payments (선택)
+  NEXT_PUBLIC_TOSS_CLIENT_KEY?: string
+  TOSS_SECRET_KEY?: string
 }
 
 type RequiredEnvKeys = 'NEXT_PUBLIC_SUPABASE_URL' | 'NEXT_PUBLIC_SUPABASE_ANON_KEY' | 'NEXT_PUBLIC_APP_URL'
@@ -57,6 +61,8 @@ function validateEnv(): EnvConfig {
     SENTRY_ORG: process.env.SENTRY_ORG,
     SENTRY_PROJECT: process.env.SENTRY_PROJECT,
     SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
+    NEXT_PUBLIC_TOSS_CLIENT_KEY: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY,
+    TOSS_SECRET_KEY: process.env.TOSS_SECRET_KEY,
   }
 }
 
@@ -101,6 +107,17 @@ export const envHelpers = {
       return !!getEnv().NEXT_PUBLIC_SENTRY_DSN
     },
   },
+  toss: {
+    get clientKey() {
+      return getEnv().NEXT_PUBLIC_TOSS_CLIENT_KEY
+    },
+    get secretKey() {
+      return getEnv().TOSS_SECRET_KEY
+    },
+    get isConfigured() {
+      return !!getEnv().NEXT_PUBLIC_TOSS_CLIENT_KEY && !!getEnv().TOSS_SECRET_KEY
+    },
+  },
 }
 
 // 개발 환경에서 환경변수 상태 로깅
@@ -112,5 +129,6 @@ export function logEnvStatus() {
   console.log('  ✅ Supabase: Configured')
   console.log(`  ${config.CLAUDE_API_KEY ? '✅' : '⚠️'} Claude API: ${config.CLAUDE_API_KEY ? 'Configured' : 'Not configured'}`)
   console.log(`  ${config.NEXT_PUBLIC_SENTRY_DSN ? '✅' : '⚠️'} Sentry: ${config.NEXT_PUBLIC_SENTRY_DSN ? 'Configured' : 'Not configured'}`)
+  console.log(`  ${envHelpers.toss.isConfigured ? '✅' : '⚠️'} Toss Payments: ${envHelpers.toss.isConfigured ? 'Configured' : 'Not configured'}`)
   console.log('')
 }

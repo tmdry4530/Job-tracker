@@ -28,6 +28,8 @@
     "@sentry/nextjs": "^10.32.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
+    "@tosspayments/brandpay-sdk": "^1.6.4",
+    "@tosspayments/payment-sdk": "^1.9.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "lucide-react": "^0.562.0",
