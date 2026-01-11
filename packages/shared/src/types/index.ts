@@ -33,3 +33,14 @@ export { isApiSuccess, isApiError } from './api';
 
 // Database types
 export type { Database } from './database';
+
+// Plan types
+export type {
+  PlanType,
+  UserPlan,
+  UserPlanInsert,
+  UserPlanUpdate,
+  PlanLimits,
+  PlanUsage,
+} from './plan';
+export { PLAN_TYPES, PLAN_LIMITS } from './plan';

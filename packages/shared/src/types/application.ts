@@ -32,12 +32,16 @@ export interface Application {
   jd_content: string | null;
   status: ApplicationStatus;
   applied_at: string | null;
+  is_bookmarked: boolean;
+  memo: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type ApplicationInsert = Omit<Application, 'id' | 'created_at' | 'updated_at'> & {
+export type ApplicationInsert = Omit<Application, 'id' | 'created_at' | 'updated_at' | 'is_bookmarked' | 'memo'> & {
   id?: string;
+  is_bookmarked?: boolean;
+  memo?: string | null;
   created_at?: string;
   updated_at?: string;
 };

@@ -7,7 +7,6 @@ import type {
   ExtensionMessage,
   JdCollectMessage,
   SyncResult,
-  Platform,
 } from '~lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { syncApplicationsToSupabase } from '~lib/sync-service'

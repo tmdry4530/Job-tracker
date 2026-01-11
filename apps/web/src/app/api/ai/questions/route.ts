@@ -6,6 +6,7 @@ import {
   INTERVIEW_QUESTIONS_SYSTEM_PROMPT,
   createInterviewQuestionsUserPrompt,
 } from '@/lib/claude'
+import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 import type { QuestionCategory } from '@job-tracker/shared'
 
 const QuestionsRequestSchema = z.object({
@@ -57,6 +58,19 @@ export async function POST(request: NextRequest) {
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
       )
+    }
+
+    // Rate limiting 체크
+    const rateLimitResult = checkRateLimit(
+      `questions:${user.id}`,
+      RATE_LIMITS.AI_QUESTIONS
+    )
+    if (!rateLimitResult.success) {
+      const errorResponse = createRateLimitResponse(rateLimitResult)
+      return NextResponse.json(errorResponse.body, {
+        status: errorResponse.status,
+        headers: errorResponse.headers,
+      })
     }
 
     // 요청 검증

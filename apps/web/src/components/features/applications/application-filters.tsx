@@ -9,10 +9,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 function FiltersSkeleton() {
   return (
-    <div className="flex items-center gap-4">
-      <Skeleton className="h-10 w-[300px]" />
-      <Skeleton className="h-10 w-[140px]" />
-      <Skeleton className="h-10 w-[140px]" />
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+      <Skeleton className="h-10 w-full sm:w-[300px]" />
+      <div className="flex items-center gap-2 sm:gap-4">
+        <Skeleton className="h-10 flex-1 sm:w-[140px]" />
+        <Skeleton className="h-10 flex-1 sm:w-[140px]" />
+      </div>
       <Skeleton className="h-5 w-[100px]" />
     </div>
   )
@@ -20,11 +22,15 @@ function FiltersSkeleton() {
 
 export function ApplicationFilters() {
   return (
-    <div className="flex items-center gap-4 mb-6">
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 mb-6">
       <Suspense fallback={<FiltersSkeleton />}>
-        <SearchInput />
-        <PlatformFilter />
-        <StatusFilter />
+        <div className="w-full sm:w-auto sm:flex-1 sm:max-w-[300px]">
+          <SearchInput />
+        </div>
+        <div className="flex items-center gap-2 sm:gap-4">
+          <PlatformFilter />
+          <StatusFilter />
+        </div>
         <DuplicateFilter />
       </Suspense>
     </div>

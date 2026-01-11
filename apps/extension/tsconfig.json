@@ -20,16 +20,20 @@
     "baseUrl": ".",
     "paths": {
       "~/*": ["./*"],
+      "~lib/*": ["./lib/*"],
+      "~contents/*": ["./contents/*"],
       "@shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": [
-    ".plasmo/index.d.ts",
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    ".plasmo/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",
-    ".plasmo"
+    "build",
+    "**/*.test.ts",
+    "vitest.config.ts"
   ]
 }

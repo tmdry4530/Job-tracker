@@ -147,34 +147,50 @@ async function sendDetectedApplication(application: ParsedApplication): Promise<
 
 /**
  * 알림 표시
+ * XSS 방지를 위해 DOM API 사용
  */
 function showNotification(message: string): void {
-  const notification = document.createElement('div')
-  notification.id = 'job-tracker-notification'
-  notification.innerHTML = `
-    <div style="
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #10B981;
-      color: white;
-      padding: 12px 20px;
-      border-radius: 8px;
-      z-index: 10000;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      animation: slideIn 0.3s ease;
-    ">
-      ✓ ${message}
-    </div>
-    <style>
-      @keyframes slideIn {
+  // 기존 알림 제거
+  const existingNotification = document.getElementById('job-tracker-notification')
+  if (existingNotification) {
+    existingNotification.remove()
+  }
+
+  // 스타일 요소 추가 (한 번만)
+  if (!document.getElementById('job-tracker-notification-styles')) {
+    const style = document.createElement('style')
+    style.id = 'job-tracker-notification-styles'
+    style.textContent = `
+      @keyframes job-tracker-slideIn {
         from { transform: translateX(100%); opacity: 0; }
         to { transform: translateX(0); opacity: 1; }
       }
-    </style>
-  `
+    `
+    document.head.appendChild(style)
+  }
+
+  const notification = document.createElement('div')
+  notification.id = 'job-tracker-notification'
+
+  const container = document.createElement('div')
+  Object.assign(container.style, {
+    position: 'fixed',
+    top: '20px',
+    right: '20px',
+    background: '#10B981',
+    color: 'white',
+    padding: '12px 20px',
+    borderRadius: '8px',
+    zIndex: '10000',
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    fontSize: '14px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+    animation: 'job-tracker-slideIn 0.3s ease',
+  })
+
+  container.textContent = `✓ ${message}`
+
+  notification.appendChild(container)
   document.body.appendChild(notification)
 
   setTimeout(() => {

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
+import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 
 const OcrRequestSchema = z.object({
   imageUrls: z.array(z.string().url()).min(1, '이미지 URL이 필요합니다'),
@@ -156,6 +157,19 @@ export async function POST(request: NextRequest) {
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
       )
+    }
+
+    // Rate limiting 체크
+    const rateLimitResult = checkRateLimit(
+      `ocr:${auth.user.id}`,
+      RATE_LIMITS.OCR
+    )
+    if (!rateLimitResult.success) {
+      const errorResponse = createRateLimitResponse(rateLimitResult)
+      return NextResponse.json(errorResponse.body, {
+        status: errorResponse.status,
+        headers: errorResponse.headers,
+      })
     }
 
     // 요청 검증

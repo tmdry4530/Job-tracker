@@ -6,6 +6,7 @@ import {
   JD_SUMMARY_SYSTEM_PROMPT,
   createJdSummaryUserPrompt,
 } from '@/lib/claude'
+import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 
 const SummarizeRequestSchema = z.object({
   applicationId: z.string().uuid('유효하지 않은 ID입니다'),
@@ -25,6 +26,19 @@ export async function POST(request: NextRequest) {
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
       )
+    }
+
+    // Rate limiting 체크
+    const rateLimitResult = checkRateLimit(
+      `summarize:${user.id}`,
+      RATE_LIMITS.AI_SUMMARIZE
+    )
+    if (!rateLimitResult.success) {
+      const errorResponse = createRateLimitResponse(rateLimitResult)
+      return NextResponse.json(errorResponse.body, {
+        status: errorResponse.status,
+        headers: errorResponse.headers,
+      })
     }
 
     // 요청 검증

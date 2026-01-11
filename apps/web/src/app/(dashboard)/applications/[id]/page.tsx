@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StatusDropdown } from '@/components/features/applications/status-dropdown'
 import { PlatformBadge } from '@/components/features/applications/platform-badge'
 import { DeleteDialog } from '@/components/features/applications/delete-dialog'
+import { BookmarkButton } from '@/components/features/applications/bookmark-button'
+import { MemoEditor } from '@/components/features/applications/memo-editor'
 import { JdSummary, InterviewQuestions } from '@/components/features/ai'
 import { formatDate } from '@job-tracker/shared'
 
@@ -49,6 +51,10 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
           <p className="text-lg text-muted-foreground">{application.position}</p>
         </div>
         <div className="flex items-center gap-2">
+          <BookmarkButton
+            applicationId={application.id}
+            isBookmarked={application.is_bookmarked}
+          />
           <StatusDropdown
             applicationId={application.id}
             currentStatus={application.status}
@@ -87,6 +93,19 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
               </Button>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* 메모 카드 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>메모</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <MemoEditor
+            applicationId={application.id}
+            initialMemo={application.memo}
+          />
         </CardContent>
       </Card>
 

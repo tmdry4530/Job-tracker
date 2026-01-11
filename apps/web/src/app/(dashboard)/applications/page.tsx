@@ -1,9 +1,12 @@
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { fetchApplications } from '@/lib/queries/applications'
+import { fetchPlanUsage } from '@/lib/queries/plan'
 import { ApplicationList } from '@/components/features/applications/application-list'
 import { ApplicationFilters } from '@/components/features/applications/application-filters'
+import { PlanBadge } from '@/components/features/plan'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Progress } from '@/components/ui/progress'
 import type { Application, ApplicationStatus, Platform } from '@job-tracker/shared'
 
 interface ApplicationsPageProps {
@@ -49,15 +52,24 @@ export default async function ApplicationsPage({ searchParams }: ApplicationsPag
   const params = await searchParams
   const supabase = await createClient()
 
-  const { data: allApplications, error } = await fetchApplications(supabase, {
-    search: params.q,
-    platform: params.platform,
-    status: params.status,
-  })
+  // 사용자 ID 가져오기
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (error) {
-    throw error
+  const [applicationsResult, planResult] = await Promise.all([
+    fetchApplications(supabase, {
+      search: params.q,
+      platform: params.platform,
+      status: params.status,
+    }),
+    user ? fetchPlanUsage(supabase, user.id) : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (applicationsResult.error) {
+    throw applicationsResult.error
   }
+
+  const allApplications = applicationsResult.data
+  const planUsage = planResult.data
 
   // 중복 필터 적용
   const showDuplicates = params.duplicates === 'true'
@@ -67,11 +79,29 @@ export default async function ApplicationsPage({ searchParams }: ApplicationsPag
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h2 className="text-2xl font-bold">지원 현황</h2>
-        <p className="text-sm text-muted-foreground">
-          {showDuplicates ? `중복 ${applications.length}건` : `총 ${applications.length}건`}
-        </p>
+        <div className="flex items-center gap-4">
+          {planUsage && (
+            <div className="flex items-center gap-3">
+              <PlanBadge planType={planUsage.plan.plan_type} />
+              {!planUsage.isUnlimited && (
+                <div className="flex items-center gap-2">
+                  <Progress
+                    value={planUsage.percentUsed}
+                    className="w-20 h-2"
+                  />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {planUsage.currentCount}/{planUsage.limit}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          <p className="text-sm text-muted-foreground">
+            {showDuplicates ? `중복 ${applications.length}건` : `총 ${applications.length}건`}
+          </p>
+        </div>
       </div>
       <Suspense fallback={<FiltersSkeleton />}>
         <ApplicationFilters />
