@@ -14,7 +14,7 @@ export async function fetchApplications(
   let query = supabase
     .from('applications')
     .select('*')
-    .order('saved_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
 
   if (params.search) {
     // 특수문자 이스케이프 (%, _, \)

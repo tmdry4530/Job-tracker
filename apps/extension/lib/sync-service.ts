@@ -149,7 +149,6 @@ async function syncSingleApplication(
         position: app.position,
         source_url: app.sourceUrl,
         jd_content: jdResult.content,
-        status: 'saved',
         saved_at: app.savedAt,
         ...(app.deadline ? { deadline: app.deadline } : {}),
       })
