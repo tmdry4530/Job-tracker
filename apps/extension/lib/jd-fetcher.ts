@@ -237,6 +237,139 @@ export async function fetchSaraminJd(sourceUrl: string): Promise<SaraminJdResult
 }
 
 /**
+ * 잡코리아 공고 URL에서 JD + 마감일 가져오기 (백그라운드 탭 + 스크립트 주입)
+ */
+export async function fetchJobkoreaJd(sourceUrl: string): Promise<JdResult | null> {
+  if (!sourceUrl || !sourceUrl.includes(PLATFORM_URLS.JOBKOREA_JD)) {
+    return null
+  }
+
+  let tabId: number | undefined
+  let windowId: number | undefined
+
+  try {
+    const window = await chrome.windows.create({
+      url: sourceUrl,
+      state: 'minimized',
+      focused: false,
+    })
+    windowId = window.id
+    tabId = window.tabs?.[0]?.id
+
+    if (!tabId) {
+      return null
+    }
+
+    // 페이지 로드 대기
+    await new Promise<void>((resolve) => {
+      const listener = (updatedTabId: number, info: chrome.tabs.TabChangeInfo) => {
+        if (updatedTabId === tabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener)
+          resolve()
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener)
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener)
+        resolve()
+      }, TIMEOUTS.PAGE_LOAD_MAX)
+    })
+
+    // DOM 렌더링 대기
+    await new Promise(resolve => setTimeout(resolve, TIMEOUTS.REACT_RENDER))
+
+    // 스크립트 주입하여 JD + 마감일 추출
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        // JD 추출
+        let content: string | null = null
+
+        // 잡코리아 JD 컨테이너 셀렉터들
+        const jdSelectors = [
+          '.tbRow',
+          '.artReadJobSum',
+          '.detailContents',
+          '.recruitment-detail',
+          '.job-detail',
+          '[class*="detail"]',
+        ]
+
+        for (const selector of jdSelectors) {
+          const el = document.querySelector(selector)
+          if (el) {
+            const text = (el as HTMLElement).innerText?.trim()
+            if (text && text.length > 100) {
+              content = text
+              break
+            }
+          }
+        }
+
+        // fallback: article 또는 main 태그
+        if (!content) {
+          const article = document.querySelector('article, main, .article')
+          if (article) {
+            const text = (article as HTMLElement).innerText?.trim()
+            if (text && text.length > 100) {
+              content = text
+            }
+          }
+        }
+
+        // 마감일 추출
+        let deadline: string | null = null
+        const pageText = document.body.innerText || ''
+
+        // 잡코리아 마감일 패턴
+        const deadlinePatterns = [
+          /마감일[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /접수마감[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /~\s*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*(?:까지|마감)/,
+          /(\d{2}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*(?:\(.\)|까지|마감)/,
+        ]
+
+        for (const pattern of deadlinePatterns) {
+          const match = pageText.match(pattern)
+          if (match && match[1]) {
+            let dateStr = match[1].replace(/[.\/]/g, '-')
+            // 2자리 연도를 4자리로 변환
+            if (dateStr.match(/^\d{2}-/)) {
+              dateStr = '20' + dateStr
+            }
+            deadline = dateStr
+            break
+          }
+        }
+
+        return { content, deadline }
+      },
+    })
+
+    if (windowId) {
+      await chrome.windows.remove(windowId)
+    }
+
+    const result = results[0]?.result as { content: string | null; deadline: string | null } | null
+    if (result) {
+      return {
+        content: result.content ? truncateText(result.content) : null,
+        deadline: result.deadline,
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error('[JD Fetcher] Failed to fetch Jobkorea JD:', error)
+    if (windowId) {
+      try { await chrome.windows.remove(windowId) } catch { /* ignore */ }
+    }
+    return null
+  }
+}
+
+/**
  * 원티드 공고 URL에서 JD + 마감일 가져오기 (백그라운드 탭 + 스크립트 주입)
  */
 export async function fetchWantedJd(sourceUrl: string): Promise<JdResult | null> {

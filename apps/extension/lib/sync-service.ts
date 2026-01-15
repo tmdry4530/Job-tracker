@@ -9,7 +9,7 @@ import type { ParsedBookmark } from './types'
 // 하위 호환성을 위한 별칭
 type ParsedApplication = ParsedBookmark
 import { SYNC } from './constants'
-import { fetchWantedJd, fetchSaraminJd } from './jd-fetcher'
+import { fetchWantedJd, fetchSaraminJd, fetchJobkoreaJd } from './jd-fetcher'
 import { callOcrApi } from './ocr-api'
 
 export interface SyncResult {
@@ -99,6 +99,14 @@ async function fetchJdContent(
     }
 
     return { content: result.content, isImageBased: result.isImage, deadline: result.deadline }
+  }
+
+  if (app.platform === 'jobkorea') {
+    const result = await fetchJobkoreaJd(app.sourceUrl)
+    if (!result) {
+      return { content: null, isImageBased: false, deadline: null }
+    }
+    return { content: result.content, isImageBased: false, deadline: result.deadline }
   }
 
   return { content: null, isImageBased: false, deadline: null }

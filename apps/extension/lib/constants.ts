@@ -42,4 +42,5 @@ export const BADGE_COLORS = {
 export const PLATFORM_URLS = {
   WANTED_JD: 'wanted.co.kr/wd/',
   SARAMIN_JD: 'saramin.co.kr/zf_info/',
+  JOBKOREA_JD: 'jobkorea.co.kr/Recruit/',
 } as const
