@@ -45,7 +45,7 @@ export function ApplicationList({ applications }: ApplicationListProps) {
               <TableHead className="w-[100px]">플랫폼</TableHead>
               <TableHead>회사명</TableHead>
               <TableHead>포지션</TableHead>
-              <TableHead className="w-[100px]">저장일</TableHead>
+              <TableHead className="w-[100px]">마감일</TableHead>
               <TableHead className="w-[100px]">상태</TableHead>
             </TableRow>
           </TableHeader>
@@ -79,7 +79,7 @@ export function ApplicationList({ applications }: ApplicationListProps) {
                   {application.position}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {application.saved_at ? formatDate(application.saved_at) : '-'}
+                  {application.deadline ? formatDate(application.deadline) : '-'}
                 </TableCell>
                 <TableCell>
                   <StatusDropdown

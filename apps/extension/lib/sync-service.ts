@@ -132,6 +132,9 @@ async function syncSingleApplication(
       })
       .eq('id', existing.id)
 
+    if (error) {
+      console.error('[Sync] Update error:', error.message, error.details, error.hint)
+    }
     return !error
   } else {
     // 새로 삽입
@@ -151,6 +154,9 @@ async function syncSingleApplication(
         ...(app.deadline ? { deadline: app.deadline } : {}),
       })
 
+    if (error) {
+      console.error('[Sync] Insert error:', error.message, error.details, error.hint)
+    }
     return !error
   }
 }

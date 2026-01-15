@@ -70,8 +70,8 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">저장일</p>
-            <p>{application.saved_at ? formatDate(application.saved_at) : '-'}</p>
+            <p className="text-sm font-medium text-muted-foreground">마감일</p>
+            <p>{application.deadline ? formatDate(application.deadline) : '-'}</p>
           </div>
           <div>
             <p className="text-sm font-medium text-muted-foreground">등록일</p>

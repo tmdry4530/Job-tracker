@@ -37,7 +37,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
               </p>
             </Link>
             <p className="text-xs text-muted-foreground mt-2">
-              {application.saved_at ? formatDate(application.saved_at) : '-'}
+              {application.deadline ? `마감 ${formatDate(application.deadline)}` : '-'}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
