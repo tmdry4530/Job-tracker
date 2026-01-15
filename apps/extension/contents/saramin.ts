@@ -282,32 +282,36 @@ function parseApplicationsFromHtml(html: string): ParsedApplication[] {
 
 /**
  * Element에서 지원 항목 파싱 (DOM parser용)
+ * 사람인 스크랩 페이지는 class 없이 semantic HTML 사용
  */
 function parseApplicationItemFromElement(item: Element): ParsedApplication | null {
-  const getText = (selectors: string[]): string => {
-    for (const selector of selectors) {
-      const el = item.querySelector(selector)
-      if (el?.textContent?.trim()) {
-        return el.textContent.trim()
-      }
-    }
-    return ''
+  // rec_idx를 포함하는 링크들 찾기
+  const jobLinks = item.querySelectorAll('a[href*="rec_idx"]')
+
+  let companyName = ''
+  let position = ''
+  let sourceUrl = ''
+
+  if (jobLinks.length >= 2) {
+    companyName = jobLinks[0].textContent?.trim() || ''
+    position = jobLinks[1].textContent?.trim() || ''
+    const href = jobLinks[0].getAttribute('href') || ''
+    sourceUrl = href.startsWith('http') ? href : `https://www.saramin.co.kr${href}`
+  } else if (jobLinks.length === 1) {
+    position = jobLinks[0].textContent?.trim() || ''
+    const href = jobLinks[0].getAttribute('href') || ''
+    sourceUrl = href.startsWith('http') ? href : `https://www.saramin.co.kr${href}`
   }
 
-  const getLink = (selectors: string[]): string => {
-    for (const selector of selectors) {
-      const el = item.querySelector(selector) as HTMLAnchorElement
-      if (el?.href) {
-        return el.href
-      }
-    }
-    return ''
+  // fallback
+  if (!companyName) {
+    const el = item.querySelector('.corp a, .corp, .company_name')
+    companyName = el?.textContent?.trim() || ''
   }
-
-  const companyName = getText(['.corp a', '.corp', '.company_name', '[class*="company"]'])
-  const position = getText(['.recruit .division', '.recruit a', '.job_tit a', '.job_tit', '.title a'])
-  const savedAtText = getText(['.col_date', '.col_apply_date', '.apply_date', '[class*="date"]'])
-  const sourceUrl = getLink(['.recruit a', 'a[href*="rec_idx"]', 'a[href*="/zf_info/"]', '.corp a', 'a'])
+  if (!position) {
+    const el = item.querySelector('.recruit a, .job_tit a, .job_tit')
+    position = el?.textContent?.trim() || ''
+  }
 
   if (!companyName && !position) {
     return null
@@ -316,7 +320,7 @@ function parseApplicationItemFromElement(item: Element): ParsedApplication | nul
   return {
     companyName: companyName || '알 수 없음',
     position: position || '알 수 없음',
-    savedAt: parseDate(savedAtText),
+    savedAt: new Date().toISOString().split('T')[0],
     sourceUrl: sourceUrl || '',
     platform: 'saramin',
   }
@@ -421,46 +425,49 @@ function parseSaraminApplications(): ParsedApplication[] {
 
 /**
  * 개별 북마크 항목 파싱
+ * 사람인 스크랩 페이지는 class 없이 semantic HTML 사용
+ * - 첫 번째 <a href*="rec_idx"> = 회사명
+ * - 두 번째 <a href*="rec_idx"> = 포지션
  */
 function parseApplicationItem(item: Element): ParsedApplication | null {
-  const companyName = extractText(item, [
-    '.corp a',
-    '.corp',
-    '.company_name',
-    '[class*="company"]',
-  ])
+  // rec_idx를 포함하는 링크들 찾기 (회사명, 포지션 순서)
+  const jobLinks = item.querySelectorAll('a[href*="rec_idx"]')
 
-  const position = extractText(item, [
-    '.recruit .division',
-    '.recruit a',
-    '.job_tit a',
-    '.job_tit',
-    '.title a',
-  ])
+  let companyName = ''
+  let position = ''
+  let sourceUrl = ''
 
-  const savedAtText = extractText(item, [
-    '.col_date',
-    '.col_apply_date',
-    '.apply_date',
-    '[class*="date"]',
-  ])
+  if (jobLinks.length >= 2) {
+    // 첫 번째 링크 = 회사명, 두 번째 링크 = 포지션
+    companyName = jobLinks[0].textContent?.trim() || ''
+    position = jobLinks[1].textContent?.trim() || ''
+    sourceUrl = (jobLinks[0] as HTMLAnchorElement).href || ''
+  } else if (jobLinks.length === 1) {
+    // 링크가 하나면 포지션으로 처리
+    position = jobLinks[0].textContent?.trim() || ''
+    sourceUrl = (jobLinks[0] as HTMLAnchorElement).href || ''
+  }
 
-  const sourceUrl = extractLink(item, [
-    '.recruit a',
-    'a[href*="rec_idx"]',
-    'a[href*="/zf_info/"]',
-    '.corp a',
-    'a',
-  ])
+  // fallback: 기존 셀렉터 시도
+  if (!companyName) {
+    companyName = extractText(item, ['.corp a', '.corp', '.company_name'])
+  }
+  if (!position) {
+    position = extractText(item, ['.recruit a', '.job_tit a', '.job_tit', '.title a'])
+  }
+  if (!sourceUrl) {
+    sourceUrl = extractLink(item, ['a[href*="rec_idx"]', 'a'])
+  }
 
   if (!companyName && !position) {
+    console.log('[Saramin Parser] Item has no company/position:', item.innerHTML.substring(0, 200))
     return null
   }
 
   return {
     companyName: companyName || '알 수 없음',
     position: position || '알 수 없음',
-    savedAt: parseDate(savedAtText),
+    savedAt: new Date().toISOString().split('T')[0],
     sourceUrl: sourceUrl || window.location.href,
     platform: 'saramin',
   }

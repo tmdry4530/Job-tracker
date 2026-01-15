@@ -14,7 +14,7 @@ import { PlatformBadge } from './platform-badge'
 import { EmptyState } from './empty-state'
 import { BookmarkButton } from './bookmark-button'
 import { ApplicationCard } from './application-card'
-import { formatDate } from '@job-tracker/shared'
+import { DeadlineBadge } from './deadline-badge'
 import type { Application } from '@job-tracker/shared'
 
 interface ApplicationListProps {
@@ -76,8 +76,8 @@ export function ApplicationList({ applications }: ApplicationListProps) {
                 <TableCell className="text-muted-foreground">
                   {application.position}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {application.deadline ? formatDate(application.deadline) : '-'}
+                <TableCell>
+                  <DeadlineBadge deadline={application.deadline} />
                 </TableCell>
               </TableRow>
             ))}

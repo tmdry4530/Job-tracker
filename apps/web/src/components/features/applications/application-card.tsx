@@ -5,7 +5,7 @@ import { MessageSquare, ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { PlatformBadge } from './platform-badge'
 import { BookmarkButton } from './bookmark-button'
-import { formatDate } from '@job-tracker/shared'
+import { DeadlineBadge } from './deadline-badge'
 import type { Application } from '@job-tracker/shared'
 
 interface ApplicationCardProps {
@@ -35,11 +35,9 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
                 {application.position}
               </p>
             </Link>
-            {application.deadline && (
-              <p className="text-xs text-muted-foreground mt-1">
-                마감 {formatDate(application.deadline)}
-              </p>
-            )}
+            <div className="mt-1">
+              <DeadlineBadge deadline={application.deadline} />
+            </div>
           </div>
           <BookmarkButton
             applicationId={application.id}

@@ -66,39 +66,42 @@ async function findExistingApplication(
 }
 
 /**
- * JD 콘텐츠 수집
+ * JD 콘텐츠 + 마감일 수집
  */
 async function fetchJdContent(
   app: ParsedApplication,
   accessToken?: string
-): Promise<{ content: string | null; isImageBased: boolean }> {
+): Promise<{ content: string | null; isImageBased: boolean; deadline: string | null }> {
   if (!app.sourceUrl) {
-    return { content: null, isImageBased: false }
+    return { content: null, isImageBased: false, deadline: null }
   }
 
   if (app.platform === 'wanted') {
-    const content = await fetchWantedJd(app.sourceUrl)
-    return { content, isImageBased: false }
+    const result = await fetchWantedJd(app.sourceUrl)
+    if (!result) {
+      return { content: null, isImageBased: false, deadline: null }
+    }
+    return { content: result.content, isImageBased: false, deadline: result.deadline }
   }
 
   if (app.platform === 'saramin') {
     const result = await fetchSaraminJd(app.sourceUrl)
     if (!result) {
-      return { content: null, isImageBased: false }
+      return { content: null, isImageBased: false, deadline: null }
     }
 
     // 이미지 기반 공고면 OCR 시도
     if (result.isImage && result.imageUrls.length > 0 && accessToken) {
       const ocrText = await callOcrApi(result.imageUrls, accessToken)
       if (ocrText) {
-        return { content: ocrText, isImageBased: true }
+        return { content: ocrText, isImageBased: true, deadline: result.deadline }
       }
     }
 
-    return { content: result.content, isImageBased: result.isImage }
+    return { content: result.content, isImageBased: result.isImage, deadline: result.deadline }
   }
 
-  return { content: null, isImageBased: false }
+  return { content: null, isImageBased: false, deadline: null }
 }
 
 /**
@@ -112,23 +115,21 @@ async function syncSingleApplication(
 ): Promise<boolean> {
   const existing = await findExistingApplication(supabase, userId, app)
 
+  // JD + 마감일 수집 (상세페이지에서)
+  const jdResult = await fetchJdContent(app, accessToken)
+  // 마감일: 상세페이지에서 가져온 값 우선, 없으면 파싱된 값 사용
+  const deadline = jdResult.deadline || app.deadline || null
+
   if (existing) {
     // 기존 레코드 업데이트
-    let jdContent = existing.jd_content
-
-    if (!jdContent && app.sourceUrl) {
-      const jdResult = await fetchJdContent(app, accessToken)
-      jdContent = jdResult.content
-    }
-
     const { error } = await supabase
       .from('applications')
       .update({
         position: app.position,
         source_url: app.sourceUrl,
         saved_at: app.savedAt,
-        ...(app.deadline ? { deadline: app.deadline } : {}),
-        ...(jdContent && !existing.jd_content ? { jd_content: jdContent } : {}),
+        ...(deadline ? { deadline } : {}),
+        ...(jdResult.content && !existing.jd_content ? { jd_content: jdResult.content } : {}),
       })
       .eq('id', existing.id)
 
@@ -138,8 +139,6 @@ async function syncSingleApplication(
     return !error
   } else {
     // 새로 삽입
-    const jdResult = await fetchJdContent(app, accessToken)
-
     const { error } = await supabase
       .from('applications')
       .insert({
@@ -150,7 +149,7 @@ async function syncSingleApplication(
         source_url: app.sourceUrl,
         jd_content: jdResult.content,
         saved_at: app.savedAt,
-        ...(app.deadline ? { deadline: app.deadline } : {}),
+        ...(deadline ? { deadline } : {}),
       })
 
     if (error) {
