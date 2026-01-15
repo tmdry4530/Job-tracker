@@ -1,10 +1,9 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import type { Application, BookmarkStatus, Platform } from '@job-tracker/shared'
+import type { Application, Platform } from '@job-tracker/shared'
 
 export interface FetchApplicationsParams {
   search?: string
   platform?: Platform
-  status?: BookmarkStatus
 }
 
 export async function fetchApplications(
@@ -26,10 +25,6 @@ export async function fetchApplications(
 
   if (params.platform) {
     query = query.eq('platform', params.platform)
-  }
-
-  if (params.status) {
-    query = query.eq('status', params.status)
   }
 
   const { data, error } = await query

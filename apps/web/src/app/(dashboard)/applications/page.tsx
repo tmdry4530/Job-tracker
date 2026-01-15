@@ -7,42 +7,19 @@ import { ApplicationFilters } from '@/components/features/applications/applicati
 import { PlanBadge } from '@/components/features/plan'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
-import type { Application, ApplicationStatus, Platform } from '@job-tracker/shared'
+import type { Platform } from '@job-tracker/shared'
 
 interface ApplicationsPageProps {
   searchParams: Promise<{
     q?: string
     platform?: Platform
-    status?: ApplicationStatus
-    duplicates?: string
   }>
-}
-
-/**
- * 중복 지원 공고만 필터링
- * 같은 회사+포지션 조합이 2개 이상인 경우
- */
-function filterDuplicates(applications: Application[]): Application[] {
-  const counts = new Map<string, number>()
-
-  // 회사+포지션 조합 카운트
-  for (const app of applications) {
-    const key = `${app.company_name.toLowerCase()}_${app.position.toLowerCase()}`
-    counts.set(key, (counts.get(key) || 0) + 1)
-  }
-
-  // 2개 이상인 것만 필터
-  return applications.filter((app) => {
-    const key = `${app.company_name.toLowerCase()}_${app.position.toLowerCase()}`
-    return (counts.get(key) || 0) >= 2
-  })
 }
 
 function FiltersSkeleton() {
   return (
     <div className="flex items-center gap-4 mb-6">
       <Skeleton className="h-10 w-[300px]" />
-      <Skeleton className="h-10 w-[140px]" />
       <Skeleton className="h-10 w-[140px]" />
     </div>
   )
@@ -59,7 +36,6 @@ export default async function ApplicationsPage({ searchParams }: ApplicationsPag
     fetchApplications(supabase, {
       search: params.q,
       platform: params.platform,
-      status: params.status,
     }),
     user ? fetchPlanUsage(supabase, user.id) : Promise.resolve({ data: null, error: null }),
   ])
@@ -68,19 +44,13 @@ export default async function ApplicationsPage({ searchParams }: ApplicationsPag
     throw applicationsResult.error
   }
 
-  const allApplications = applicationsResult.data
+  const applications = applicationsResult.data
   const planUsage = planResult.data
-
-  // 중복 필터 적용
-  const showDuplicates = params.duplicates === 'true'
-  const applications = showDuplicates
-    ? filterDuplicates(allApplications)
-    : allApplications
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h2 className="text-2xl font-bold">지원 현황</h2>
+        <h2 className="text-2xl font-bold">저장한 공고</h2>
         <div className="flex items-center gap-4">
           {planUsage && (
             <div className="flex items-center gap-3">
@@ -99,7 +69,7 @@ export default async function ApplicationsPage({ searchParams }: ApplicationsPag
             </div>
           )}
           <p className="text-sm text-muted-foreground">
-            {showDuplicates ? `중복 ${applications.length}건` : `총 ${applications.length}건`}
+            총 {applications.length}건
           </p>
         </div>
       </div>
