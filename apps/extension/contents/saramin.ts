@@ -1,7 +1,7 @@
 import type { PlasmoCSConfig } from 'plasmo'
 import type { ParsedApplication } from '~lib/types'
 import { showOverlay, hideOverlay } from '~lib/overlay'
-import { waitForDOM, waitForSelector, extractText, extractLink, parseDate } from '~lib/dom-utils'
+import { waitForDOM, waitForSelector, extractText, extractLink } from '~lib/dom-utils'
 import { sendParseResult } from '~lib/parse-result'
 
 export const config: PlasmoCSConfig = {

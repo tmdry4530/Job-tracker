@@ -88,12 +88,14 @@ export interface InterviewQuestion {
   application_id: string;
   user_id: string;
   question: string;
+  answer: string | null;
   category: QuestionCategory | null;
   created_at: string;
 }
 
-export type InterviewQuestionInsert = Omit<InterviewQuestion, 'id' | 'created_at'> & {
+export type InterviewQuestionInsert = Omit<InterviewQuestion, 'id' | 'created_at' | 'answer'> & {
   id?: string;
+  answer?: string | null;
   created_at?: string;
 };
 
