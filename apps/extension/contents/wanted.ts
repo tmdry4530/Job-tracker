@@ -29,15 +29,24 @@ interface InterceptedApplication {
   position?: string
 }
 
-let interceptedApiData: InterceptedApplication[] = []
+interface InterceptedData {
+  applications: InterceptedApplication[]
+  total: number
+  status?: string  // 현재 API의 status 파라미터
+}
+
+let interceptedApiData: InterceptedData = { applications: [], total: 0 }
 
 // 인터셉터(MAIN world)에서 postMessage로 보내는 데이터 수신
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.source !== window) return
 
   if (event.data?.type === 'WANTED_APPLICATIONS_INTERCEPTED' && event.data?.applications) {
-    interceptedApiData = event.data.applications
-    console.log('[Wanted Parser] Received intercepted API data via postMessage:', interceptedApiData.length)
+    interceptedApiData = {
+      applications: event.data.applications,
+      total: event.data.total || event.data.applications.length,
+    }
+    console.log('[Wanted Parser] Received intercepted API data:', interceptedApiData.applications.length, 'total:', interceptedApiData.total)
   }
 })
 
@@ -98,8 +107,8 @@ function convertInterceptedData(data: InterceptedApplication[]): ParsedApplicati
 /**
  * API 데이터 대기 (인터셉터에서 데이터를 받을 때까지)
  */
-async function waitForInterceptedData(timeoutMs: number = 5000): Promise<InterceptedApplication[]> {
-  if (interceptedApiData.length > 0) {
+async function waitForInterceptedData(timeoutMs: number = 5000): Promise<InterceptedData> {
+  if (interceptedApiData.applications.length > 0) {
     return interceptedApiData
   }
 
@@ -107,16 +116,17 @@ async function waitForInterceptedData(timeoutMs: number = 5000): Promise<Interce
     const startTime = Date.now()
 
     const checkInterval = setInterval(() => {
-      if (interceptedApiData.length > 0) {
+      if (interceptedApiData.applications.length > 0) {
         clearInterval(checkInterval)
         resolve(interceptedApiData)
       } else if (Date.now() - startTime >= timeoutMs) {
         clearInterval(checkInterval)
-        resolve([])
+        resolve({ applications: [], total: 0 })
       }
     }, 200)
   })
 }
+
 
 /**
  * 원티드 지원현황 페이지에서 지원 내역 파싱 (DOM 폴백)
@@ -230,15 +240,15 @@ async function main(): Promise<void> {
 
     let applications: ParsedApplication[] = []
 
-    // 1. 먼저 인터셉터에서 API 데이터를 받았는지 확인
+    // 인터셉터에서 API 데이터를 받을 때까지 대기 (인터셉터가 페이지네이션 처리)
     console.log('[Wanted Parser] Waiting for intercepted API data...')
-    const apiData = await waitForInterceptedData(3000)
+    const intercepted = await waitForInterceptedData(8000)  // 페이지네이션 처리 시간 고려
 
-    if (apiData.length > 0) {
-      console.log(`[Wanted Parser] Using intercepted API data: ${apiData.length} items`)
-      applications = convertInterceptedData(apiData)
+    if (intercepted.applications.length > 0) {
+      console.log(`[Wanted Parser] Using intercepted API data: ${intercepted.applications.length} items, total: ${intercepted.total}`)
+      applications = convertInterceptedData(intercepted.applications)
     } else {
-      // 2. API 데이터 없으면 DOM 파싱으로 폴백
+      // API 데이터 없으면 DOM 파싱으로 폴백
       console.log('[Wanted Parser] No API data, falling back to DOM parsing')
       applications = parseWantedApplicationsFromDom()
     }
@@ -250,7 +260,7 @@ async function main(): Promise<void> {
       return
     }
 
-    const sourceType = apiData.length > 0 ? 'API' : 'DOM'
+    const sourceType = intercepted.applications.length > 0 ? 'API' : 'DOM'
     showOverlay(`${applications.length}개의 북마크 공고를 찾았습니다 (${sourceType})`, 'success')
     hideOverlay()
 

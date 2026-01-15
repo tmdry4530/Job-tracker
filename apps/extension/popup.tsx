@@ -21,7 +21,7 @@ function IndexPopup() {
 
   useEffect(() => {
     // 초기 데이터 로드
-    chrome.storage.local.get(['session', 'pendingApplications', 'lastSyncTime'], (result) => {
+    chrome.storage.local.get(['session', 'pendingApplications', 'lastSyncTime', 'isSyncing'], (result) => {
       const storedSession = result.session as StoredSession | undefined
       if (storedSession && !isSessionExpired(storedSession)) {
         setSession(storedSession)
@@ -35,6 +35,11 @@ function IndexPopup() {
 
       if (result.lastSyncTime) {
         setLastSyncTime(result.lastSyncTime)
+      }
+
+      // 동기화 진행 상태 복원
+      if (result.isSyncing) {
+        setSyncing(true)
       }
 
       setLoading(false)
@@ -57,6 +62,10 @@ function IndexPopup() {
         if (changes.pendingApplications) {
           setPendingApplications(changes.pendingApplications.newValue || [])
         }
+        // 동기화 상태 변경 감지
+        if (changes.isSyncing !== undefined) {
+          setSyncing(changes.isSyncing.newValue || false)
+        }
       }
     }
 
@@ -76,9 +85,8 @@ function IndexPopup() {
   }
 
   const handleSync = async () => {
-    if (!session || pendingApplications.length === 0) return
+    if (!session || pendingApplications.length === 0 || syncing) return
 
-    setSyncing(true)
     setSyncResult(null)
 
     try {
@@ -93,9 +101,8 @@ function IndexPopup() {
       }
     } catch (error) {
       setSyncResult({ error: '동기화 요청 실패' })
-    } finally {
-      setSyncing(false)
     }
+    // syncing 상태는 storage change 리스너에서 자동으로 업데이트됨
   }
 
   const formatLastSyncTime = (timestamp: number): string => {
@@ -210,13 +217,23 @@ function IndexPopup() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className={`w-full py-2 px-4 text-sm rounded-md transition-colors ${
+            className={`w-full py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${
               syncing
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                ? 'bg-green-500 text-white cursor-not-allowed'
                 : 'bg-green-600 text-white hover:bg-green-700'
             }`}
           >
-            {syncing ? '동기화 중...' : `지금 동기화 (${pendingApplications.length}개)`}
+            {syncing ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                동기화 중... ({pendingApplications.length}개)
+              </>
+            ) : (
+              `지금 동기화 (${pendingApplications.length}개)`
+            )}
           </button>
         )}
 

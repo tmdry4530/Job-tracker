@@ -180,10 +180,25 @@ export async function clearPendingApplications(): Promise<void> {
 }
 
 /**
+ * 동기화 상태 설정
+ */
+async function setSyncingState(isSyncing: boolean): Promise<void> {
+  await chrome.storage.local.set({ isSyncing })
+  console.log('[Extension BG] Syncing state:', isSyncing)
+}
+
+/**
  * 동기화 요청 처리
  */
 async function handleSyncRequest(): Promise<SyncResult> {
   console.log('[Extension BG] Sync request received')
+
+  // 이미 동기화 중인지 확인
+  const { isSyncing } = await chrome.storage.local.get(['isSyncing'])
+  if (isSyncing) {
+    console.log('[Extension BG] Sync already in progress')
+    return { error: '동기화가 이미 진행 중입니다', timestamp: Date.now() }
+  }
 
   if (!supabase) {
     return { error: '로그인이 필요합니다', timestamp: Date.now() }
@@ -193,6 +208,9 @@ async function handleSyncRequest(): Promise<SyncResult> {
     return { syncedCount: 0, skippedCount: 0, timestamp: Date.now() }
   }
 
+  // 동기화 시작 상태 저장
+  await setSyncingState(true)
+
   try {
     const result = await syncApplicationsToSupabase(supabase, pendingApplications)
 
@@ -200,9 +218,13 @@ async function handleSyncRequest(): Promise<SyncResult> {
       await clearPendingApplications()
     }
 
+    // 동기화 완료 상태 저장
+    await setSyncingState(false)
     return result
   } catch (error) {
     console.error('[Extension BG] Sync failed:', error)
+    // 동기화 실패 시에도 상태 초기화
+    await setSyncingState(false)
     return {
       error: error instanceof Error ? error.message : '동기화 실패',
       timestamp: Date.now(),

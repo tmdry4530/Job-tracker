@@ -94,6 +94,15 @@ export interface ParseState {
 }
 
 /**
+ * 동기화 진행 상황
+ */
+export interface SyncProgress {
+  current: number
+  total: number
+  currentItem?: string
+}
+
+/**
  * 동기화 성공 결과
  */
 export interface SyncSuccessResult {
