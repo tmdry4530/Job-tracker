@@ -65,16 +65,16 @@ export async function deleteApplication(
   return { success: true }
 }
 
-const ToggleBookmarkSchema = z.object({
+const ToggleFavoriteSchema = z.object({
   id: UuidSchema,
-  isBookmarked: z.boolean(),
+  isFavorite: z.boolean(),
 })
 
-export async function toggleBookmark(
+export async function toggleFavorite(
   id: string,
-  isBookmarked: boolean
+  isFavorite: boolean
 ): Promise<{ success: boolean; error?: string }> {
-  const parsed = ToggleBookmarkSchema.safeParse({ id, isBookmarked })
+  const parsed = ToggleFavoriteSchema.safeParse({ id, isFavorite })
   if (!parsed.success) {
     return { success: false, error: parsed.error.errors[0]?.message || '입력값이 유효하지 않습니다' }
   }
@@ -83,7 +83,7 @@ export async function toggleBookmark(
 
   const { error } = await supabase
     .from('applications')
-    .update({ is_bookmarked: parsed.data.isBookmarked })
+    .update({ is_favorite: parsed.data.isFavorite })
     .eq('id', parsed.data.id)
 
   if (error) {

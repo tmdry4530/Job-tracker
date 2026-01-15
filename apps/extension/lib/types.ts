@@ -5,13 +5,11 @@
 /** 지원 플랫폼 */
 export type Platform = 'wanted' | 'saramin'
 
-/** 지원 상태 */
-export type ApplicationStatus =
-  | 'applied'
-  | 'document_passed'
-  | 'interview'
-  | 'accepted'
-  | 'rejected'
+/** 북마크 상태 */
+export type BookmarkStatus = 'saved' | 'applied' | 'closed'
+
+// 하위 호환성을 위한 별칭
+export type ApplicationStatus = BookmarkStatus
 
 /**
  * Extension에서 저장하는 세션 정보 타입
@@ -44,17 +42,20 @@ export interface AuthState {
 }
 
 /**
- * 파싱된 지원 공고 데이터
+ * 파싱된 북마크 공고 데이터
  */
-export interface ParsedApplication {
+export interface ParsedBookmark {
   companyName: string
   position: string
-  appliedAt: string
-  status: string
+  savedAt: string
   sourceUrl: string
   jdContent?: string
   platform: Platform
+  deadline?: string
 }
+
+// 하위 호환성을 위한 별칭
+export type ParsedApplication = ParsedBookmark
 
 /**
  * 파싱 성공 결과

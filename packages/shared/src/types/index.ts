@@ -7,8 +7,11 @@
 export type { Platform, PlatformType } from './platform';
 export { PLATFORMS } from './platform';
 
-// Application types
+// Application (Bookmark) types
 export type {
+  BookmarkStatus,
+  BookmarkStatusType,
+  Bookmark,
   ApplicationStatus,
   ApplicationStatusType,
   Application,
@@ -22,7 +25,7 @@ export type {
   InterviewQuestionInsert,
   InterviewQuestionUpdate,
 } from './application';
-export { APPLICATION_STATUSES, QUESTION_CATEGORIES } from './application';
+export { BOOKMARK_STATUSES, APPLICATION_STATUSES, QUESTION_CATEGORIES } from './application';
 
 // User types
 export type { User, UserSession } from './user';

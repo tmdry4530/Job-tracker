@@ -1,12 +1,11 @@
-# Job Application Tracker
+# Job Bookmark Tracker
 
-채용 플랫폼 지원 현황 통합 관리 서비스
+채용 플랫폼 북마크/스크랩 공고 통합 관리 서비스
 
 ## Project Overview
 
-- **목표**: 여러 채용 플랫폼(원티드, 사람인 등)에서 지원한 공고를 한 곳에서 관리
-- **핵심 기능**: 크롬 익스텐션으로 데이터 수집 → LLM으로 JD 요약 → 대시보드에서 관리
-- **방법론**: BMAD Method + Claude Code Subagents
+- **목표**: 여러 채용 플랫폼(원티드, 사람인 등)에서 북마크한 공고를 한 곳에서 관리
+- **핵심 기능**: 크롬 익스텐션으로 북마크 수집 → LLM으로 JD 요약 → 대시보드에서 관리
 
 ## Tech Stack
 
@@ -66,16 +65,11 @@ pnpm lint
 - 커밋 전 lint + type-check 통과 필수
 - 테스트 커버리지 80% 이상 목표
 
-## BMAD Workflow Status
+## 개발 규칙
 
-현재 진행 상황은 `docs/bmm-workflow-status.yaml` 참조
-
-## Story 작업 규칙
-
-1. 스토리 파일(`docs/stories/story-X.X-*.md`)을 먼저 읽고 시작
-2. 구현 완료 후 스토리 파일의 체크리스트 업데이트
-3. 테스트 통과 확인 후 커밋
-4. `docs/sprint-status.yaml` 상태 업데이트
+1. 코드 수정 전 관련 파일 먼저 읽고 이해
+2. 테스트 통과 확인 후 커밋
+3. 타입 안전성 유지 (shared 패키지의 타입 활용)
 
 ## 금지 사항
 

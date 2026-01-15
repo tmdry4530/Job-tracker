@@ -8,7 +8,10 @@ import type { StoredSession, SessionMessage } from '~lib/types'
  */
 
 export const config: PlasmoCSConfig = {
-  matches: ['http://localhost:3000/*'],
+  matches: [
+    'http://localhost:3000/*',
+    'https://job-tracker-web-omega.vercel.app/*',
+  ],
   run_at: 'document_idle',
 }
 

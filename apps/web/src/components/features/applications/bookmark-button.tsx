@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Bookmark } from 'lucide-react'
+import { Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { toggleBookmark } from '@/app/(dashboard)/applications/actions'
+import { toggleFavorite } from '@/app/(dashboard)/applications/actions'
 import { cn } from '@/lib/utils'
 
 interface BookmarkButtonProps {
@@ -25,7 +25,7 @@ export function BookmarkButton({
     setOptimisticBookmarked(newValue)
 
     startTransition(async () => {
-      const result = await toggleBookmark(applicationId, newValue)
+      const result = await toggleFavorite(applicationId, newValue)
       if (!result.success) {
         // 실패 시 롤백
         setOptimisticBookmarked(!newValue)
@@ -47,16 +47,16 @@ export function BookmarkButton({
         size === 'sm' ? 'h-8 w-8' : 'gap-2',
         optimisticBookmarked && 'text-yellow-500 hover:text-yellow-600'
       )}
-      aria-label={optimisticBookmarked ? '북마크 해제' : '북마크 추가'}
+      aria-label={optimisticBookmarked ? '즐겨찾기 해제' : '즐겨찾기 추가'}
     >
-      <Bookmark
+      <Star
         className={cn(
           size === 'sm' ? 'h-4 w-4' : 'h-5 w-5',
           optimisticBookmarked && 'fill-current'
         )}
       />
       {size === 'default' && (
-        <span>{optimisticBookmarked ? '북마크됨' : '북마크'}</span>
+        <span>{optimisticBookmarked ? '즐겨찾기' : '즐겨찾기'}</span>
       )}
     </Button>
   )

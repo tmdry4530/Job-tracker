@@ -1,5 +1,5 @@
 /**
- * Application Schemas
+ * Bookmark Schemas
  * Zod 스키마를 이용한 런타임 검증
  */
 
@@ -9,15 +9,13 @@ import { z } from 'zod';
 export const PlatformSchema = z.enum(['wanted', 'saramin']);
 export type PlatformFromSchema = z.infer<typeof PlatformSchema>;
 
-// Application Status Schema
-export const ApplicationStatusSchema = z.enum([
-  'applied',
-  'document_passed',
-  'interview',
-  'accepted',
-  'rejected',
-]);
-export type ApplicationStatusFromSchema = z.infer<typeof ApplicationStatusSchema>;
+// Bookmark Status Schema
+export const BookmarkStatusSchema = z.enum(['saved', 'applied', 'closed']);
+export type BookmarkStatusFromSchema = z.infer<typeof BookmarkStatusSchema>;
+
+// 하위 호환성을 위한 별칭
+export const ApplicationStatusSchema = BookmarkStatusSchema;
+export type ApplicationStatusFromSchema = BookmarkStatusFromSchema;
 
 // Question Category Schema
 export const QuestionCategorySchema = z.enum([
@@ -28,7 +26,7 @@ export const QuestionCategorySchema = z.enum([
 ]);
 export type QuestionCategoryFromSchema = z.infer<typeof QuestionCategorySchema>;
 
-// Application Schema
+// Application (Bookmark) Schema
 export const ApplicationSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -37,12 +35,19 @@ export const ApplicationSchema = z.object({
   position: z.string().min(1, '포지션은 필수입니다'),
   source_url: z.string().url('올바른 URL 형식이 아닙니다'),
   jd_content: z.string().nullable(),
-  status: ApplicationStatusSchema,
-  applied_at: z.string().datetime().nullable(),
+  status: BookmarkStatusSchema,
+  saved_at: z.string().datetime().nullable(),
+  is_favorite: z.boolean(),
+  memo: z.string().nullable(),
+  deadline: z.string().datetime().nullable(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
 export type ApplicationFromSchema = z.infer<typeof ApplicationSchema>;
+
+// 하위 호환성을 위한 별칭
+export const BookmarkSchema = ApplicationSchema;
+export type BookmarkFromSchema = ApplicationFromSchema;
 
 // Application Insert Schema (id, created_at, updated_at are optional)
 export const ApplicationInsertSchema = ApplicationSchema.omit({

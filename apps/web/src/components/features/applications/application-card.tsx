@@ -37,13 +37,13 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
               </p>
             </Link>
             <p className="text-xs text-muted-foreground mt-2">
-              {application.applied_at ? formatDate(application.applied_at) : '-'}
+              {application.saved_at ? formatDate(application.saved_at) : '-'}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
             <BookmarkButton
               applicationId={application.id}
-              isBookmarked={application.is_bookmarked}
+              isBookmarked={application.is_favorite}
               size="sm"
             />
             <StatusDropdown

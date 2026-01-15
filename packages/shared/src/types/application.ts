@@ -1,26 +1,26 @@
 /**
- * Application Types
- * 지원 공고 관련 타입 정의
+ * Bookmark Types
+ * 북마크/스크랩 공고 관련 타입 정의
  */
 
 import type { Platform } from './platform';
 
-export type ApplicationStatus =
-  | 'applied'
-  | 'document_passed'
-  | 'interview'
-  | 'accepted'
-  | 'rejected';
+/**
+ * 북마크 상태
+ * - saved: 저장됨 (기본값)
+ * - applied: 지원함
+ * - closed: 마감됨
+ */
+export type BookmarkStatus = 'saved' | 'applied' | 'closed';
 
-export const APPLICATION_STATUSES = [
-  'applied',
-  'document_passed',
-  'interview',
-  'accepted',
-  'rejected',
-] as const;
+export const BOOKMARK_STATUSES = ['saved', 'applied', 'closed'] as const;
 
-export type ApplicationStatusType = (typeof APPLICATION_STATUSES)[number];
+export type BookmarkStatusType = (typeof BOOKMARK_STATUSES)[number];
+
+// 하위 호환성을 위해 기존 타입 별칭 유지
+export type ApplicationStatus = BookmarkStatus;
+export const APPLICATION_STATUSES = BOOKMARK_STATUSES;
+export type ApplicationStatusType = BookmarkStatusType;
 
 export interface Application {
   id: string;
@@ -30,18 +30,23 @@ export interface Application {
   position: string;
   source_url: string;
   jd_content: string | null;
-  status: ApplicationStatus;
-  applied_at: string | null;
-  is_bookmarked: boolean;
+  status: BookmarkStatus;
+  saved_at: string | null;
+  is_favorite: boolean;
   memo: string | null;
+  deadline: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type ApplicationInsert = Omit<Application, 'id' | 'created_at' | 'updated_at' | 'is_bookmarked' | 'memo'> & {
+// 하위 호환성을 위한 별칭
+export type Bookmark = Application;
+
+export type ApplicationInsert = Omit<Application, 'id' | 'created_at' | 'updated_at' | 'is_favorite' | 'memo' | 'deadline'> & {
   id?: string;
-  is_bookmarked?: boolean;
+  is_favorite?: boolean;
   memo?: string | null;
+  deadline?: string | null;
   created_at?: string;
   updated_at?: string;
 };

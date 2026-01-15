@@ -1,10 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import type { Application, ApplicationStatus, Platform } from '@job-tracker/shared'
+import type { Application, BookmarkStatus, Platform } from '@job-tracker/shared'
 
 export interface FetchApplicationsParams {
   search?: string
   platform?: Platform
-  status?: ApplicationStatus
+  status?: BookmarkStatus
 }
 
 export async function fetchApplications(
@@ -14,7 +14,7 @@ export async function fetchApplications(
   let query = supabase
     .from('applications')
     .select('*')
-    .order('applied_at', { ascending: false, nullsFirst: false })
+    .order('saved_at', { ascending: false, nullsFirst: false })
 
   if (params.search) {
     // 특수문자 이스케이프 (%, _, \)

@@ -1,10 +1,13 @@
 /**
  * Supabase 동기화 서비스
- * 지원 내역을 Supabase에 저장/업데이트
+ * 북마크 공고를 Supabase에 저장/업데이트
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ParsedApplication } from './types'
+import type { ParsedBookmark } from './types'
+
+// 하위 호환성을 위한 별칭
+type ParsedApplication = ParsedBookmark
 import { SYNC } from './constants'
 import { fetchWantedJd, fetchSaraminJd } from './jd-fetcher'
 import { callOcrApi } from './ocr-api'
@@ -123,8 +126,8 @@ async function syncSingleApplication(
       .update({
         position: app.position,
         source_url: app.sourceUrl,
-        status: app.status,
-        applied_at: app.appliedAt,
+        saved_at: app.savedAt,
+        ...(app.deadline ? { deadline: app.deadline } : {}),
         ...(jdContent && !existing.jd_content ? { jd_content: jdContent } : {}),
       })
       .eq('id', existing.id)
@@ -143,8 +146,9 @@ async function syncSingleApplication(
         position: app.position,
         source_url: app.sourceUrl,
         jd_content: jdResult.content,
-        status: app.status,
-        applied_at: app.appliedAt,
+        status: 'saved',
+        saved_at: app.savedAt,
+        ...(app.deadline ? { deadline: app.deadline } : {}),
       })
 
     return !error
@@ -152,7 +156,7 @@ async function syncSingleApplication(
 }
 
 /**
- * Supabase에 지원 내역 동기화
+ * Supabase에 북마크 공고 동기화
  */
 export async function syncApplicationsToSupabase(
   supabase: SupabaseClient,

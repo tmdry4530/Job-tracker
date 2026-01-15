@@ -53,7 +53,7 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
         <div className="flex items-center gap-2">
           <BookmarkButton
             applicationId={application.id}
-            isBookmarked={application.is_bookmarked}
+            isBookmarked={application.is_favorite}
           />
           <StatusDropdown
             applicationId={application.id}
@@ -63,15 +63,15 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
         </div>
       </div>
 
-      {/* 지원 정보 카드 */}
+      {/* 공고 정보 카드 */}
       <Card>
         <CardHeader>
-          <CardTitle>지원 정보</CardTitle>
+          <CardTitle>공고 정보</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">지원일</p>
-            <p>{application.applied_at ? formatDate(application.applied_at) : '-'}</p>
+            <p className="text-sm font-medium text-muted-foreground">저장일</p>
+            <p>{application.saved_at ? formatDate(application.saved_at) : '-'}</p>
           </div>
           <div>
             <p className="text-sm font-medium text-muted-foreground">등록일</p>

@@ -97,8 +97,7 @@ function extractJobInfo(): ParsedApplication | null {
     return {
       companyName: companyName || '알 수 없음',
       position: position || '알 수 없음',
-      appliedAt: new Date().toISOString().split('T')[0],
-      status: 'applied',
+      savedAt: new Date().toISOString().split('T')[0],
       sourceUrl,
       platform: 'wanted',
     }

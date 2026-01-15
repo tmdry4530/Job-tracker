@@ -19,13 +19,22 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "~/*": ["./*"],
-      "~lib/*": ["./lib/*"],
-      "~contents/*": ["./contents/*"],
-      "@shared/*": ["../../packages/shared/src/*"]
+      "~/*": [
+        "./*"
+      ],
+      "~lib/*": [
+        "./lib/*"
+      ],
+      "~contents/*": [
+        "./contents/*"
+      ],
+      "@shared/*": [
+        "../../packages/shared/src/*"
+      ]
     }
   },
   "include": [
+    ".plasmo/index.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".plasmo/**/*.d.ts"

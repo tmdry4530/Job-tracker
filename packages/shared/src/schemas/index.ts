@@ -7,8 +7,10 @@
 export { PlatformSchema } from './application';
 export type { PlatformFromSchema } from './application';
 
-// Application schemas
+// Application (Bookmark) schemas
 export {
+  BookmarkStatusSchema,
+  BookmarkSchema,
   ApplicationStatusSchema,
   QuestionCategorySchema,
   ApplicationSchema,
@@ -18,6 +20,8 @@ export {
   InterviewQuestionSchema,
 } from './application';
 export type {
+  BookmarkStatusFromSchema,
+  BookmarkFromSchema,
   ApplicationStatusFromSchema,
   QuestionCategoryFromSchema,
   ApplicationFromSchema,

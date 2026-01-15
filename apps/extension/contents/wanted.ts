@@ -2,21 +2,20 @@ import type { PlasmoCSConfig } from 'plasmo'
 import type { ParsedApplication } from '~lib/types'
 import { showOverlay, hideOverlay } from '~lib/overlay'
 import { waitForDOM, waitForSelector, extractText, extractLink, parseDate } from '~lib/dom-utils'
-import { normalizeWantedStatus, normalizeApiStatus } from '~lib/status-normalizer'
 import { sendParseResult } from '~lib/parse-result'
 
 export const config: PlasmoCSConfig = {
   matches: [
-    'https://www.wanted.co.kr/status/applications*',
-    'https://www.wanted.co.kr/status/applications/*',
+    'https://www.wanted.co.kr/profile/bookmarks*',
+    'https://www.wanted.co.kr/profile/bookmarks/*',
   ],
   run_at: 'document_idle',
 }
 
 /**
- * 원티드 지원현황 페이지 파서
- * - URL: https://www.wanted.co.kr/status/applications
- * - API 인터셉터에서 받은 데이터 또는 DOM에서 지원 내역을 파싱
+ * 원티드 북마크 페이지 파서
+ * - URL: https://www.wanted.co.kr/profile/bookmarks
+ * - DOM에서 북마크한 공고 목록을 파싱
  * - job_id를 활용하여 상세 공고 URL 생성
  */
 
@@ -89,8 +88,7 @@ function convertInterceptedData(data: InterceptedApplication[]): ParsedApplicati
     return {
       companyName,
       position,
-      appliedAt: app.create_time ? app.create_time.split('T')[0] : new Date().toISOString().split('T')[0],
-      status: normalizeApiStatus(app.status),
+      savedAt: app.create_time ? app.create_time.split('T')[0] : new Date().toISOString().split('T')[0],
       sourceUrl: app.job_id ? `https://www.wanted.co.kr/wd/${app.job_id}` : '',
       platform: 'wanted' as const,
     }
@@ -164,7 +162,7 @@ function parseWantedApplicationsFromDom(): ParsedApplication[] {
 }
 
 /**
- * 개별 지원 항목 파싱
+ * 개별 북마크 항목 파싱
  */
 function parseApplicationItem(item: Element): ParsedApplication | null {
   const companyName = extractText(item, [
@@ -179,18 +177,11 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
     '[class*="title"]',
   ])
 
-  const appliedAtText = extractText(item, [
+  const savedAtText = extractText(item, [
     '[class*="table_td_create_time"]',
     '[class*="create_time"]',
     '[class*="date"]',
     'time',
-  ])
-
-  const statusText = extractText(item, [
-    '[class*="table_td_status"]',
-    '[class*="status"]',
-    '[class*="process"]',
-    '[class*="state"]',
   ])
 
   let sourceUrl = extractLink(item, [
@@ -211,8 +202,7 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
   return {
     companyName: companyName || '알 수 없음',
     position: position || '알 수 없음',
-    appliedAt: parseDate(appliedAtText),
-    status: normalizeWantedStatus(statusText),
+    savedAt: parseDate(savedAtText),
     sourceUrl,
     platform: 'wanted',
   }
@@ -222,9 +212,9 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
  * 메인 파싱 로직
  */
 async function main(): Promise<void> {
-  console.log('[Wanted Parser] 원티드 지원현황 페이지 감지')
+  console.log('[Wanted Parser] 원티드 북마크 페이지 감지')
 
-  showOverlay('지원 내역 수집 중...')
+  showOverlay('북마크 공고 수집 중...')
 
   try {
     await waitForDOM()
@@ -232,9 +222,9 @@ async function main(): Promise<void> {
     const hasApplicationList = await waitForSelector(APPLICATION_LIST_SELECTORS)
 
     if (!hasApplicationList) {
-      showOverlay('지원 내역이 없거나 페이지를 찾을 수 없습니다', 'error')
+      showOverlay('북마크 공고가 없거나 페이지를 찾을 수 없습니다', 'error')
       hideOverlay()
-      await sendParseResult('wanted', [], '지원 목록을 찾을 수 없습니다')
+      await sendParseResult('wanted', [], '북마크 목록을 찾을 수 없습니다')
       return
     }
 
@@ -254,14 +244,14 @@ async function main(): Promise<void> {
     }
 
     if (applications.length === 0) {
-      showOverlay('지원 내역이 없습니다', 'success')
+      showOverlay('북마크 공고가 없습니다', 'success')
       hideOverlay()
       await sendParseResult('wanted', [])
       return
     }
 
     const sourceType = apiData.length > 0 ? 'API' : 'DOM'
-    showOverlay(`${applications.length}개의 지원 내역을 찾았습니다 (${sourceType})`, 'success')
+    showOverlay(`${applications.length}개의 북마크 공고를 찾았습니다 (${sourceType})`, 'success')
     hideOverlay()
 
     await sendParseResult('wanted', applications)

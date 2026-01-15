@@ -45,7 +45,7 @@ export function ApplicationList({ applications }: ApplicationListProps) {
               <TableHead className="w-[100px]">플랫폼</TableHead>
               <TableHead>회사명</TableHead>
               <TableHead>포지션</TableHead>
-              <TableHead className="w-[100px]">지원일</TableHead>
+              <TableHead className="w-[100px]">저장일</TableHead>
               <TableHead className="w-[100px]">상태</TableHead>
             </TableRow>
           </TableHeader>
@@ -56,7 +56,7 @@ export function ApplicationList({ applications }: ApplicationListProps) {
                   <div className="flex items-center gap-1">
                     <BookmarkButton
                       applicationId={application.id}
-                      isBookmarked={application.is_bookmarked}
+                      isBookmarked={application.is_favorite}
                       size="sm"
                     />
                     {application.memo && (
@@ -79,7 +79,7 @@ export function ApplicationList({ applications }: ApplicationListProps) {
                   {application.position}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {application.applied_at ? formatDate(application.applied_at) : '-'}
+                  {application.saved_at ? formatDate(application.saved_at) : '-'}
                 </TableCell>
                 <TableCell>
                   <StatusDropdown

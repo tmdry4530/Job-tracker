@@ -2,23 +2,20 @@ import type { PlasmoCSConfig } from 'plasmo'
 import type { ParsedApplication } from '~lib/types'
 import { showOverlay, hideOverlay } from '~lib/overlay'
 import { waitForDOM, waitForSelector, extractText, extractLink, parseDate } from '~lib/dom-utils'
-import { normalizeSaraminStatus } from '~lib/status-normalizer'
 import { sendParseResult } from '~lib/parse-result'
 
 export const config: PlasmoCSConfig = {
   matches: [
-    'https://www.saramin.co.kr/zf_user/persons/apply-status-list*',
-    'https://www.saramin.co.kr/zf_user/apply-management/*',
-    'https://www.saramin.co.kr/zf_user/apply*',
-    'https://www.saramin.co.kr/zf_user/members/apply*',
+    'https://www.saramin.co.kr/zf_user/persons/scrap-recruit*',
+    'https://www.saramin.co.kr/zf_user/scrap*',
   ],
   run_at: 'document_idle',
 }
 
 /**
- * 사람인 지원현황 페이지 파서
- * - URL: https://www.saramin.co.kr/zf_user/apply-status
- * - DOM에서 지원 내역을 파싱하여 Background로 전달
+ * 사람인 스크랩 페이지 파서
+ * - URL: https://www.saramin.co.kr/zf_user/persons/scrap-recruit
+ * - DOM에서 스크랩한 공고 목록을 파싱하여 Background로 전달
  */
 
 /** 지원 목록 컨테이너 셀렉터 */
@@ -76,7 +73,7 @@ function parseSaraminApplications(): ParsedApplication[] {
 }
 
 /**
- * 개별 지원 항목 파싱
+ * 개별 북마크 항목 파싱
  */
 function parseApplicationItem(item: Element): ParsedApplication | null {
   const companyName = extractText(item, [
@@ -94,19 +91,11 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
     '.title a',
   ])
 
-  const appliedAtText = extractText(item, [
+  const savedAtText = extractText(item, [
     '.col_date',
     '.col_apply_date',
     '.apply_date',
     '[class*="date"]',
-  ])
-
-  const statusText = extractText(item, [
-    '.status .txt_status',
-    '.txt_status',
-    '.col_state .state',
-    '.apply_status',
-    '.status',
   ])
 
   const sourceUrl = extractLink(item, [
@@ -124,8 +113,7 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
   return {
     companyName: companyName || '알 수 없음',
     position: position || '알 수 없음',
-    appliedAt: parseDate(appliedAtText),
-    status: normalizeSaraminStatus(statusText),
+    savedAt: parseDate(savedAtText),
     sourceUrl: sourceUrl || window.location.href,
     platform: 'saramin',
   }
@@ -135,9 +123,9 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
  * 메인 파싱 로직
  */
 async function main(): Promise<void> {
-  console.log('[Saramin Parser] 사람인 지원현황 페이지 감지')
+  console.log('[Saramin Parser] 사람인 스크랩 페이지 감지')
 
-  showOverlay('지원 내역 수집 중...')
+  showOverlay('스크랩 공고 수집 중...')
 
   try {
     await waitForDOM()
@@ -145,22 +133,22 @@ async function main(): Promise<void> {
     const hasApplicationList = await waitForSelector(APPLICATION_LIST_SELECTORS)
 
     if (!hasApplicationList) {
-      showOverlay('지원 내역이 없거나 페이지를 찾을 수 없습니다', 'error')
+      showOverlay('스크랩 공고가 없거나 페이지를 찾을 수 없습니다', 'error')
       hideOverlay()
-      await sendParseResult('saramin', [], '지원 목록을 찾을 수 없습니다')
+      await sendParseResult('saramin', [], '스크랩 목록을 찾을 수 없습니다')
       return
     }
 
     const applications = parseSaraminApplications()
 
     if (applications.length === 0) {
-      showOverlay('지원 내역이 없습니다', 'success')
+      showOverlay('스크랩 공고가 없습니다', 'success')
       hideOverlay()
       await sendParseResult('saramin', [])
       return
     }
 
-    showOverlay(`${applications.length}개의 지원 내역을 찾았습니다`, 'success')
+    showOverlay(`${applications.length}개의 스크랩 공고를 찾았습니다`, 'success')
     hideOverlay()
 
     await sendParseResult('saramin', applications)
