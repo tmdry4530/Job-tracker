@@ -27,7 +27,6 @@ interface WantedApplication {
 let allApplications: WantedApplication[] = []
 let expectedTotal = 0
 let isCollecting = false
-let collectingResolve: ((apps: WantedApplication[]) => void) | null = null
 
 /**
  * Send data to content script via postMessage

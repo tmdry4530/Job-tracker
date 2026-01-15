@@ -306,8 +306,7 @@ function parseApplicationItemFromElement(item: Element): ParsedApplication | nul
 
   const companyName = getText(['.corp a', '.corp', '.company_name', '[class*="company"]'])
   const position = getText(['.recruit .division', '.recruit a', '.job_tit a', '.job_tit', '.title a'])
-  const appliedAtText = getText(['.col_date', '.col_apply_date', '.apply_date', '[class*="date"]'])
-  const statusText = getText(['.status .txt_status', '.txt_status', '.col_state .state', '.apply_status', '.status'])
+  const savedAtText = getText(['.col_date', '.col_apply_date', '.apply_date', '[class*="date"]'])
   const sourceUrl = getLink(['.recruit a', 'a[href*="rec_idx"]', 'a[href*="/zf_info/"]', '.corp a', 'a'])
 
   if (!companyName && !position) {
@@ -317,8 +316,7 @@ function parseApplicationItemFromElement(item: Element): ParsedApplication | nul
   return {
     companyName: companyName || '알 수 없음',
     position: position || '알 수 없음',
-    appliedAt: parseDate(appliedAtText),
-    status: normalizeSaraminStatus(statusText),
+    savedAt: parseDate(savedAtText),
     sourceUrl: sourceUrl || '',
     platform: 'saramin',
   }
@@ -474,7 +472,7 @@ function parseApplicationItem(item: Element): ParsedApplication | null {
 function deduplicateApplications(applications: ParsedApplication[]): ParsedApplication[] {
   const seen = new Set<string>()
   return applications.filter(app => {
-    const key = `${app.companyName}-${app.position}-${app.appliedAt}`
+    const key = `${app.companyName}-${app.position}-${app.savedAt}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
