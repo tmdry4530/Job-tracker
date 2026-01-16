@@ -42,6 +42,7 @@
     "host_permissions": [
       "https://www.wanted.co.kr/*",
       "https://www.saramin.co.kr/*",
+      "https://www.jobkorea.co.kr/*",
       "http://localhost:3000/*",
       "https://job-tracker-web-omega.vercel.app/*"
     ],

@@ -19,6 +19,9 @@ export interface SyncResult {
   error?: string
 }
 
+/** 동기화 진행 콜백 타입 */
+export type SyncProgressCallback = (current: number, currentItem?: string) => Promise<void>
+
 /**
  * 중복 제거된 애플리케이션 목록 반환
  */
@@ -172,7 +175,8 @@ async function syncSingleApplication(
  */
 export async function syncApplicationsToSupabase(
   supabase: SupabaseClient,
-  applications: ParsedApplication[]
+  applications: ParsedApplication[],
+  onProgress?: SyncProgressCallback
 ): Promise<SyncResult> {
   // 현재 사용자 정보
   const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -190,6 +194,7 @@ export async function syncApplicationsToSupabase(
 
   let syncedCount = 0
   let skippedCount = 0
+  let processedCount = 0
 
   // 배치 처리
   for (let i = 0; i < uniqueApplications.length; i += SYNC.BATCH_SIZE) {
@@ -197,6 +202,11 @@ export async function syncApplicationsToSupabase(
 
     for (const app of batch) {
       try {
+        // 진행 상황 콜백 호출
+        if (onProgress) {
+          await onProgress(processedCount + 1, `${app.companyName} - ${app.position}`)
+        }
+
         const success = await syncSingleApplication(supabase, user.id, app, accessToken)
         if (success) {
           syncedCount++
@@ -207,6 +217,7 @@ export async function syncApplicationsToSupabase(
         console.error('[Sync] Item error:', error)
         skippedCount++
       }
+      processedCount++
     }
   }
 

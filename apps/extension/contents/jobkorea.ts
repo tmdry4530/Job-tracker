@@ -15,17 +15,21 @@ export const config: PlasmoCSConfig = {
 /**
  * 잡코리아 스크랩 페이지 파서
  * - URL: https://www.jobkorea.co.kr/User/Scrap
- * - DOM에서 스크랩한 공고 목록을 파싱하여 Background로 전달
+ * - DOM 구조:
+ *   div.tableList.scrap-list
+ *     └── form
+ *          └── div.col.infoCol (공고 정보 영역)
+ *               ├── strong.titArea
+ *               │   └── a[href="/Recruit/GI_Read/..."] (공고 제목)
+ *               └── ul.list-inline
+ *                    └── li > a[href*="/Co_read"] (회사명)
  */
 
 /** 스크랩 목록 컨테이너 셀렉터 */
 const SCRAP_LIST_SELECTORS = [
-  '.list-default',
-  '.list-post',
-  '.recruit-info',
-  'table.tbl',
-  '.tplList',
-  '[class*="list"]',
+  'div.tableList.scrap-list',
+  '.scrap-list',
+  '.tableList',
 ]
 
 /**
@@ -34,13 +38,13 @@ const SCRAP_LIST_SELECTORS = [
 function parseJobkoreaScrapList(): ParsedApplication[] {
   const applications: ParsedApplication[] = []
 
-  // 방법 1: 테이블 형태의 스크랩 목록
-  const tableRows = document.querySelectorAll('table.tbl tbody tr, .list-default tbody tr')
-  console.log(`[Jobkorea Parser] Found ${tableRows.length} table rows`)
+  // 정확한 셀렉터: div.tableList.scrap-list .col.infoCol
+  const infoItems = document.querySelectorAll('div.tableList.scrap-list .col.infoCol')
+  console.log(`[Jobkorea Parser] Found ${infoItems.length} .col.infoCol items`)
 
-  if (tableRows.length > 0) {
-    tableRows.forEach((row) => {
-      const app = parseTableRow(row)
+  if (infoItems.length > 0) {
+    infoItems.forEach((item) => {
+      const app = parseInfoColItem(item)
       if (app) {
         applications.push(app)
       }
@@ -48,149 +52,57 @@ function parseJobkoreaScrapList(): ParsedApplication[] {
     return applications
   }
 
-  // 방법 2: 리스트 아이템 형태
-  const listItems = document.querySelectorAll('.list-post > li, .recruit-info > li, .tplList > li')
-  console.log(`[Jobkorea Parser] Found ${listItems.length} list items`)
+  // fallback: .infoCol만 사용
+  const fallbackItems = document.querySelectorAll('.infoCol')
+  console.log(`[Jobkorea Parser] Fallback: Found ${fallbackItems.length} .infoCol items`)
 
-  if (listItems.length > 0) {
-    listItems.forEach((item) => {
-      const app = parseListItem(item)
+  if (fallbackItems.length > 0) {
+    fallbackItems.forEach((item) => {
+      const app = parseInfoColItem(item)
       if (app) {
         applications.push(app)
       }
     })
     return applications
   }
-
-  // 방법 3: 공고 링크 기반 파싱
-  const jobLinks = document.querySelectorAll('a[href*="/Recruit/"], a[href*="/recruit/"]')
-  console.log(`[Jobkorea Parser] Found ${jobLinks.length} job links`)
-
-  const processedUrls = new Set<string>()
-
-  jobLinks.forEach((link) => {
-    const href = (link as HTMLAnchorElement).href
-    if (processedUrls.has(href)) return
-    processedUrls.add(href)
-
-    const container = link.closest('tr') || link.closest('li') || link.parentElement
-    if (!container) return
-
-    const app = parseGenericContainer(container, href)
-    if (app) {
-      applications.push(app)
-    }
-  })
 
   return applications
 }
 
 /**
- * 테이블 행에서 데이터 추출
+ * .col.infoCol 요소에서 데이터 추출
  */
-function parseTableRow(row: Element): ParsedApplication | null {
-  // 회사명 찾기
-  const companyEl = row.querySelector('.co-name a, .company-name a, td.co a, .name a, [class*="company"] a')
-  const companyName = companyEl?.textContent?.trim() || ''
-
-  // 포지션 찾기
-  const positionEl = row.querySelector('.job-tit a, .recruit-tit a, td.title a, .tit a, [class*="title"] a, [class*="tit"] a')
+function parseInfoColItem(item: Element): ParsedApplication | null {
+  // 공고 제목 (포지션): strong.titArea > a[href*="/Recruit/GI_Read"]
+  const positionEl = item.querySelector('strong.titArea a[href*="/Recruit/GI_Read"]') ||
+                     item.querySelector('a[href*="/Recruit/GI_Read"]') ||
+                     item.querySelector('.titArea a')
   const position = positionEl?.textContent?.trim() || ''
 
-  // URL 찾기
-  const linkEl = row.querySelector('a[href*="/Recruit/"], a[href*="/recruit/"]') as HTMLAnchorElement
-  let sourceUrl = linkEl?.href || ''
-
-  // URL이 상대 경로인 경우 절대 경로로 변환
-  if (sourceUrl && !sourceUrl.startsWith('http')) {
-    sourceUrl = `https://www.jobkorea.co.kr${sourceUrl}`
+  // 공고 URL
+  let sourceUrl = ''
+  if (positionEl) {
+    const href = positionEl.getAttribute('href') || ''
+    sourceUrl = href.startsWith('http') ? href : `https://www.jobkorea.co.kr${href}`
   }
 
-  if (!companyName && !position) {
-    return null
-  }
-
-  return {
-    companyName: companyName || '알 수 없음',
-    position: position || '알 수 없음',
-    savedAt: new Date().toISOString().split('T')[0],
-    sourceUrl,
-    platform: 'jobkorea',
-  }
-}
-
-/**
- * 리스트 아이템에서 데이터 추출
- */
-function parseListItem(item: Element): ParsedApplication | null {
-  // 회사명 찾기
-  const companyEl = item.querySelector('.co-name a, .company a, .name a, [class*="company"] a')
+  // 회사명: 부모 요소에서 a[href*="/Co_read"] 찾기
+  // infoCol의 부모(row)에서 회사 링크 찾기
+  const parentRow = item.closest('form') || item.parentElement
+  const companyEl = parentRow?.querySelector('a[href*="/Co_read"]') ||
+                    parentRow?.querySelector('a[href*="/Recruit/Co_Read"]') ||
+                    item.querySelector('ul.list-inline li:first-child a')
   const companyName = companyEl?.textContent?.trim() || ''
 
-  // 포지션 찾기
-  const positionEl = item.querySelector('.job-tit a, .tit a, .title a, [class*="title"] a, h3 a, h4 a')
-  const position = positionEl?.textContent?.trim() || ''
+  console.log(`[Jobkorea Parser] Parsed: company="${companyName}", position="${position}", url="${sourceUrl}"`)
 
-  // URL 찾기
-  const linkEl = item.querySelector('a[href*="/Recruit/"], a[href*="/recruit/"]') as HTMLAnchorElement
-  let sourceUrl = linkEl?.href || ''
-
-  if (sourceUrl && !sourceUrl.startsWith('http')) {
-    sourceUrl = `https://www.jobkorea.co.kr${sourceUrl}`
-  }
-
-  if (!companyName && !position) {
+  if (!position) {
     return null
   }
 
   return {
     companyName: companyName || '알 수 없음',
-    position: position || '알 수 없음',
-    savedAt: new Date().toISOString().split('T')[0],
-    sourceUrl,
-    platform: 'jobkorea',
-  }
-}
-
-/**
- * 일반 컨테이너에서 데이터 추출
- */
-function parseGenericContainer(container: Element, sourceUrl: string): ParsedApplication | null {
-  const links = container.querySelectorAll('a')
-
-  let companyName = ''
-  let position = ''
-
-  // 링크 텍스트에서 추출
-  links.forEach((link) => {
-    const href = link.getAttribute('href') || ''
-    const text = link.textContent?.trim() || ''
-
-    if (href.includes('/Recruit/') || href.includes('/recruit/')) {
-      if (!position) position = text
-    } else if (href.includes('/Corp/') || href.includes('/corp/')) {
-      if (!companyName) companyName = text
-    }
-  })
-
-  // fallback: 첫 번째와 두 번째 링크 사용
-  if (!companyName || !position) {
-    const linkTexts = Array.from(links).map(l => l.textContent?.trim()).filter(Boolean)
-    if (linkTexts.length >= 2) {
-      if (!companyName) companyName = linkTexts[0] || ''
-      if (!position) position = linkTexts[1] || ''
-    } else if (linkTexts.length === 1) {
-      if (!position) position = linkTexts[0] || ''
-    }
-  }
-
-  if (!companyName && !position) {
-    return null
-  }
-
-  return {
-    companyName: companyName || '알 수 없음',
-    position: position || '알 수 없음',
+    position,
     savedAt: new Date().toISOString().split('T')[0],
     sourceUrl,
     platform: 'jobkorea',
