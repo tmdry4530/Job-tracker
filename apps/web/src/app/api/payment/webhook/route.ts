@@ -46,8 +46,9 @@ interface TossWebhookPayload {
 /** 원문 바디에 대한 HMAC-SHA256 서명 검증 (TOSS_WEBHOOK_SECRET 설정 시) */
 function verifySignature(rawBody: string, signature: string | null): boolean {
   const secret = process.env.TOSS_WEBHOOK_SECRET
-  // 시크릿 미설정 시 서명 검증은 건너뛴다(금액 이벤트는 아래 Toss 재검증으로 방어).
-  if (!secret) return true
+  // fail-closed: 운영에서 시크릿이 없으면 검증 실패로 처리해 위조 웹훅을 차단한다.
+  // (개발 환경에서만 미설정을 허용해 로컬 테스트 편의를 제공 — 운영에서는 절대 통과 안 됨)
+  if (!secret) return process.env.NODE_ENV !== 'production'
   if (!signature) return false
 
   const expected = crypto
@@ -84,7 +85,10 @@ export async function POST(request: Request) {
 
     switch (eventType) {
       case 'BILLING_KEY.DELETED': {
-        // 빌링키 삭제됨 - 구독 취소 처리 (서명 검증으로만 보호되는 이벤트)
+        // 빌링키 삭제됨 - 구독 취소 처리.
+        // 한계: Toss는 빌링키 상태 조회 API를 제공하지 않으므로 금액 이벤트처럼 재조회로 권위 값을
+        //   확인할 수 없다. 따라서 이 이벤트는 fail-closed HMAC 서명 검증(위 verifySignature)이
+        //   유일한 진위 보증이다 — 서명 검증을 통과한 요청만 여기 도달하므로 위조 취소를 차단한다.
         if (data.customerKey) {
           try {
             await db
@@ -111,6 +115,16 @@ export async function POST(request: Request) {
               { error: 'unverified payment' },
               { status: 400 }
             )
+          }
+
+          // 멱등성: 동일 paymentKey가 이미 기록돼 있으면 갱신/삽입을 건너뛴다(웹훅 중복 전송 방지).
+          const [existingPayment] = await db
+            .select({ id: paymentHistory.id })
+            .from(paymentHistory)
+            .where(eq(paymentHistory.payment_key, data.paymentKey))
+            .limit(1)
+          if (existingPayment) {
+            return NextResponse.json({ success: true, idempotent: true })
           }
 
           const [subscription] = await db

@@ -23,6 +23,7 @@ type EnvConfig = {
 
   // Claude API (선택)
   CLAUDE_API_KEY?: string
+  CLAUDE_MODEL?: string
 
   // Sentry (선택)
   NEXT_PUBLIC_SENTRY_DSN?: string
@@ -68,6 +69,7 @@ function validateEnv(): EnvConfig {
     AUTH_KAKAO_SECRET: process.env.AUTH_KAKAO_SECRET,
 
     CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
+    CLAUDE_MODEL: process.env.CLAUDE_MODEL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     SENTRY_ORG: process.env.SENTRY_ORG,
     SENTRY_PROJECT: process.env.SENTRY_PROJECT,
@@ -108,6 +110,10 @@ export const envHelpers = {
   claude: {
     get apiKey() {
       return getEnv().CLAUDE_API_KEY
+    },
+    // 모델 ID 오버라이드(선택). 미설정 시 호출부 기본값 사용
+    get model() {
+      return getEnv().CLAUDE_MODEL
     },
     get isConfigured() {
       return !!getEnv().CLAUDE_API_KEY

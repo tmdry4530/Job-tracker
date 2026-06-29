@@ -1,12 +1,118 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { v4 as uuidv4 } from 'uuid'
+import { lookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
 import { getUserIdFromRequest } from '@/lib/auth/get-user'
 import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 
+// dns 모듈 사용 + SSRF 방어를 위해 node 런타임 강제 (edge 불가)
+export const runtime = 'nodejs'
+
+// https + 개수 상한으로 SSRF 표면 축소
 const OcrRequestSchema = z.object({
-  imageUrls: z.array(z.string().url()).min(1, '이미지 URL이 필요합니다'),
+  imageUrls: z
+    .array(
+      z
+        .string()
+        .url()
+        .refine((u) => {
+          try {
+            return new URL(u).protocol === 'https:'
+          } catch {
+            return false
+          }
+        }, 'https URL만 허용됩니다')
+    )
+    .min(1, '이미지 URL이 필요합니다')
+    .max(10, '한 번에 최대 10개의 이미지만 처리할 수 있습니다'),
 })
+
+// 이미지 fetch 안전 한도
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10MB
+const FETCH_TIMEOUT_MS = 10_000 // 10초
+
+/** SSRF 거부를 식별하기 위한 전용 에러 타입 */
+class SsrfError extends Error {}
+
+/** 사설/루프백/링크로컬 IPv4 대역 판별 */
+function isPrivateIpv4(ip: string): boolean {
+  const parts = ip.split('.').map((p) => Number(p))
+  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
+    return true // 파싱 불가 → 안전하지 않은 것으로 취급
+  }
+  const [a, b] = parts
+  if (a === 0) return true // 0.0.0.0/8
+  if (a === 10) return true // 10.0.0.0/8
+  if (a === 127) return true // 127.0.0.0/8 (loopback)
+  if (a === 169 && b === 254) return true // 169.254.0.0/16 (link-local)
+  if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12
+  if (a === 192 && b === 168) return true // 192.168.0.0/16
+  return false
+}
+
+/** 사설/루프백/링크로컬 IP(IPv4/IPv6) 판별 */
+function isPrivateIp(ip: string): boolean {
+  const family = isIP(ip)
+  if (family === 4) return isPrivateIpv4(ip)
+  if (family === 6) {
+    const lower = ip.toLowerCase()
+    if (lower === '::1' || lower === '::') return true // loopback / unspecified
+    const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
+    if (mapped) return isPrivateIpv4(mapped[1]) // IPv4-mapped
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true // fc00::/7 (ULA)
+    if (/^fe[89ab]/.test(lower)) return true // fe80::/10 (link-local)
+    return false
+  }
+  return true // 알 수 없는 형식 → 거부
+}
+
+/**
+ * URL이 외부로 안전한지 검증: https 강제 + DNS resolve 결과가
+ * 사설/루프백/링크로컬 대역이면 거부 (SSRF 방어)
+ */
+async function assertSafeUrl(imageUrl: string): Promise<void> {
+  let parsed: URL
+  try {
+    parsed = new URL(imageUrl)
+  } catch {
+    throw new SsrfError('잘못된 이미지 URL입니다')
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new SsrfError('https URL만 허용됩니다')
+  }
+  const records = await lookup(parsed.hostname, { all: true })
+  if (records.length === 0) {
+    throw new SsrfError('호스트를 확인할 수 없습니다')
+  }
+  for (const { address } of records) {
+    if (isPrivateIp(address)) {
+      throw new SsrfError('허용되지 않은 대상 주소입니다')
+    }
+  }
+}
+
+/** 응답 본문을 바이트 상한을 적용해 읽기 (대용량 다운로드 차단) */
+async function readBodyWithCap(response: Response, maxBytes: number): Promise<Buffer> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('응답 본문이 없습니다')
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value) {
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel()
+        throw new Error('이미지 크기가 허용 한도를 초과했습니다')
+      }
+      chunks.push(value)
+    }
+  }
+  return Buffer.concat(chunks)
+}
 
 interface ClovaOcrField {
   inferText: string
@@ -26,15 +132,36 @@ interface ClovaOcrResponse {
  */
 async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; format: string } | null> {
   try {
-    const response = await fetch(imageUrl)
+    // (a) DNS resolve 기반 사설/루프백 대역 차단 (rebinding 대비 defense-in-depth)
+    await assertSafeUrl(imageUrl)
+
+    // (b) 10초 타임아웃
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    let response: Response
+    try {
+      response = await fetch(imageUrl, {
+        signal: controller.signal,
+        redirect: 'manual', // (c) 리다이렉트 추종 금지 (내부망 우회 차단)
+      })
+    } finally {
+      clearTimeout(timeout)
+    }
+
+    // redirect:'manual' → 3xx(또는 opaqueredirect status 0)는 추종하지 않고 거부
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+      console.error('[OCR API] Redirect blocked:', response.status)
+      return null
+    }
     if (!response.ok) {
       console.error('[OCR API] Failed to fetch image:', response.status)
       return null
     }
 
     const contentType = response.headers.get('content-type') || 'image/png'
-    const buffer = await response.arrayBuffer()
-    const base64 = Buffer.from(buffer).toString('base64')
+    // (d) 응답 바이트 상한(10MB) 적용
+    const buffer = await readBodyWithCap(response, MAX_IMAGE_BYTES)
+    const base64 = buffer.toString('base64')
 
     // 포맷 추출
     let format = 'png'
@@ -76,7 +203,7 @@ async function callClovaOcr(imageUrl: string): Promise<string> {
 
   const requestBody = {
     version: 'V2',
-    requestId: uuidv4(),
+    requestId: crypto.randomUUID(),
     timestamp: Date.now(),
     images: [
       {
@@ -154,6 +281,24 @@ export async function POST(request: NextRequest) {
     }
 
     const { imageUrls } = parsed.data
+
+    // SSRF 사전 검증: 사설/루프백/링크로컬 대역을 가리키는 URL은 즉시 거부
+    for (const imageUrl of imageUrls) {
+      try {
+        await assertSafeUrl(imageUrl)
+      } catch (error) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'INVALID_IMAGE_URL',
+              message: error instanceof SsrfError ? error.message : '허용되지 않은 이미지 URL입니다',
+            },
+          },
+          { status: 400 }
+        )
+      }
+    }
 
     // 각 이미지에 대해 OCR 실행
     const ocrResults: string[] = []

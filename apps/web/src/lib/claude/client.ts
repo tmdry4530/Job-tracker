@@ -34,7 +34,8 @@ export async function sendMessage(
   const {
     maxTokens = 1024,
     temperature = 0.7,
-    model = 'claude-sonnet-4-20250514',
+    // 모델 ID는 env로 오버라이드(구형 ID 404 방지). 기본값은 현행 Sonnet
+    model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
   } = options
 
   const response = await client.messages.create({
