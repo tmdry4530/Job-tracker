@@ -22,6 +22,17 @@ export {}
  * - 파싱 결과 수신 및 저장
  */
 
+/** 동기화 진행 상태 */
+export interface SyncProgress {
+  current: number
+  total: number
+  currentItem?: string
+  startedAt: number
+}
+
+/** 동기화 타임아웃 (5분) */
+const SYNC_TIMEOUT_MS = 5 * 60 * 1000
+
 let auth: StoredAuth | null = null
 let pendingApplications: ParsedApplication[] = []
 
@@ -104,6 +115,28 @@ async function initializeAuth() {
 initializeAuth()
 
 /**
+ * 애플리케이션 고유 키 생성
+ */
+function getApplicationKey(app: ParsedApplication): string {
+  return app.sourceUrl || `${app.platform}-${app.companyName}-${app.position}`
+}
+
+/**
+ * 중복 제거하여 애플리케이션 병합
+ */
+function mergeApplications(
+  existing: ParsedApplication[],
+  newApps: ParsedApplication[]
+): ParsedApplication[] {
+  const existingKeys = new Set(existing.map(getApplicationKey))
+  const uniqueNewApps = newApps.filter(app => !existingKeys.has(getApplicationKey(app)))
+
+  console.log(`[Extension BG] Dedup: ${newApps.length} incoming, ${uniqueNewApps.length} new, ${newApps.length - uniqueNewApps.length} duplicates skipped`)
+
+  return [...existing, ...uniqueNewApps]
+}
+
+/**
  * 파싱 결과 처리
  */
 async function handleParseResult(message: ParseMessage) {
@@ -117,7 +150,14 @@ async function handleParseResult(message: ParseMessage) {
   const { platform, applications } = message.payload
   console.log(`[Extension BG] Parsed ${applications.length} applications from ${platform}`)
 
-  pendingApplications = [...pendingApplications, ...applications]
+  // 기존 pendingApplications 로드 (Service Worker 재시작 대비)
+  const { pendingApplications: storedPending } = await chrome.storage.local.get(['pendingApplications'])
+  if (storedPending && Array.isArray(storedPending)) {
+    pendingApplications = storedPending
+  }
+
+  // 중복 제거하여 병합
+  pendingApplications = mergeApplications(pendingApplications, applications)
 
   await chrome.storage.local.set({
     pendingApplications,
@@ -150,29 +190,114 @@ export async function clearPendingApplications(): Promise<void> {
 }
 
 /**
+ * 동기화 상태 설정 (진행 상황 포함)
+ */
+async function setSyncingState(
+  isSyncing: boolean,
+  progress?: SyncProgress
+): Promise<void> {
+  if (isSyncing && progress) {
+    await chrome.storage.local.set({ isSyncing, syncProgress: progress })
+  } else {
+    await chrome.storage.local.set({ isSyncing, syncProgress: null })
+  }
+  console.log('[Extension BG] Syncing state:', isSyncing, progress || '')
+}
+
+/**
+ * 동기화 진행 상황 업데이트
+ */
+async function updateSyncProgress(
+  current: number,
+  total: number,
+  currentItem?: string
+): Promise<void> {
+  const { syncProgress } = await chrome.storage.local.get(['syncProgress'])
+  const startedAt = syncProgress?.startedAt || Date.now()
+
+  await chrome.storage.local.set({
+    syncProgress: { current, total, currentItem, startedAt }
+  })
+}
+
+/**
+ * 오래된 동기화 상태 정리 (타임아웃)
+ */
+async function cleanupStaleSyncState(): Promise<boolean> {
+  const { isSyncing, syncProgress } = await chrome.storage.local.get(['isSyncing', 'syncProgress'])
+
+  if (isSyncing && syncProgress?.startedAt) {
+    const elapsed = Date.now() - syncProgress.startedAt
+    if (elapsed > SYNC_TIMEOUT_MS) {
+      console.log('[Extension BG] Clearing stale sync state (timeout)')
+      await setSyncingState(false)
+      return true // 상태가 정리됨
+    }
+  }
+
+  return false
+}
+
+/**
  * 동기화 요청 처리
  */
 async function handleSyncRequest(): Promise<SyncResult> {
   console.log('[Extension BG] Sync request received')
 
+  // 오래된 동기화 상태 정리
+  await cleanupStaleSyncState()
+
+  // 이미 동기화 중인지 확인
+  const { isSyncing } = await chrome.storage.local.get(['isSyncing'])
+  if (isSyncing) {
+    console.log('[Extension BG] Sync already in progress')
+    return { error: '동기화가 이미 진행 중입니다', timestamp: Date.now() }
+  }
+
   if (!auth) {
     return { error: '로그인이 필요합니다', timestamp: Date.now() }
+  }
+
+  // 최신 pendingApplications 로드 (Service Worker 재시작 대비)
+  const { pendingApplications: storedPending } = await chrome.storage.local.get(['pendingApplications'])
+  if (storedPending && Array.isArray(storedPending)) {
+    pendingApplications = storedPending
   }
 
   if (pendingApplications.length === 0) {
     return { syncedCount: 0, skippedCount: 0, timestamp: Date.now() }
   }
 
+  const total = pendingApplications.length
+
+  // 동기화 시작 상태 저장
+  await setSyncingState(true, {
+    current: 0,
+    total,
+    startedAt: Date.now(),
+  })
+
   try {
-    const result = await syncBookmarks(auth, pendingApplications)
+    // 진행 상황 콜백과 함께 동기화 실행
+    const result = await syncBookmarks(
+      auth,
+      pendingApplications,
+      async (current, currentItem) => {
+        await updateSyncProgress(current, total, currentItem)
+      }
+    )
 
     if (result.syncedCount > 0) {
       await clearPendingApplications()
     }
 
+    // 동기화 완료 상태 저장
+    await setSyncingState(false)
     return result
   } catch (error) {
     console.error('[Extension BG] Sync failed:', error)
+    // 동기화 실패 시에도 상태 초기화
+    await setSyncingState(false)
     return {
       error: error instanceof Error ? error.message : '동기화 실패',
       timestamp: Date.now(),

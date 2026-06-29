@@ -3,10 +3,9 @@
 import Link from 'next/link'
 import { MessageSquare, ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
-import { StatusDropdown } from './status-dropdown'
 import { PlatformBadge } from './platform-badge'
 import { BookmarkButton } from './bookmark-button'
-import { formatDate } from '@job-tracker/shared'
+import { DeadlineBadge } from './deadline-badge'
 import type { Application } from '@job-tracker/shared'
 
 interface ApplicationCardProps {
@@ -36,21 +35,15 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
                 {application.position}
               </p>
             </Link>
-            <p className="text-xs text-muted-foreground mt-2">
-              {application.saved_at ? formatDate(application.saved_at) : '-'}
-            </p>
+            <div className="mt-1">
+              <DeadlineBadge deadline={application.deadline} />
+            </div>
           </div>
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <BookmarkButton
-              applicationId={application.id}
-              isBookmarked={application.is_favorite}
-              size="sm"
-            />
-            <StatusDropdown
-              applicationId={application.id}
-              currentStatus={application.status}
-            />
-          </div>
+          <BookmarkButton
+            applicationId={application.id}
+            isBookmarked={application.is_favorite}
+            size="sm"
+          />
         </div>
         <Link
           href={`/applications/${application.id}`}

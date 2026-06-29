@@ -121,7 +121,7 @@ export const applications = pgTable(
     deadlineIdx: index('idx_applications_deadline').on(t.deadline),
     platformCheck: check(
       'applications_platform_check',
-      sql`${t.platform} IN ('wanted', 'saramin')`
+      sql`${t.platform} IN ('wanted', 'saramin', 'jobkorea')`
     ),
     statusCheck: check(
       'applications_status_check',
@@ -168,6 +168,7 @@ export const interviewQuestions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     question: text('question').notNull(),
+    answer: text('answer'),
     category: text('category'),
     created_at: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()

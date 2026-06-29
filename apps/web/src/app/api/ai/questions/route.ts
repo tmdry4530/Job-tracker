@@ -20,6 +20,7 @@ const ApplicationIdSchema = z.string().uuid('유효하지 않은 ID입니다')
 
 interface GeneratedQuestion {
   question: string
+  answer: string
   category: QuestionCategory
 }
 
@@ -41,6 +42,7 @@ function parseQuestionsResponse(response: string): GeneratedQuestion[] {
         typeof item === 'object' &&
         item !== null &&
         typeof item.question === 'string' &&
+        typeof item.answer === 'string' &&
         ['technical', 'experience', 'situational', 'general'].includes(item.category)
       )
     })
@@ -156,11 +158,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 질문 저장
+    // 질문 저장 (모범 답변 포함)
     const questionsToInsert = questions.map((q) => ({
       application_id: applicationId,
       user_id: userId,
       question: q.question,
+      answer: q.answer,
       category: q.category,
     }))
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquare, Loader2, RefreshCw, AlertCircle } from 'lucide-react'
+import { MessageSquare, Loader2, RefreshCw, AlertCircle, Lightbulb } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,6 +24,7 @@ interface InterviewQuestion {
   id: string
   application_id: string
   question: string
+  answer: string | null
   category: QuestionCategory | null
   created_at: string
 }
@@ -274,16 +275,29 @@ export function InterviewQuestions({ applicationId, hasJdContent }: InterviewQue
                   </div>
                 </AccordionTrigger>
                 <AccordionContent>
-                  <ul className="space-y-3">
+                  <div className="space-y-4">
                     {categoryQuestions.map((q, index) => (
-                      <li key={q.id} className="flex gap-3">
-                        <span className="text-muted-foreground font-medium shrink-0">
-                          {index + 1}.
-                        </span>
-                        <span className="text-sm">{q.question}</span>
-                      </li>
+                      <div key={q.id} className="border rounded-lg p-3 bg-muted/30">
+                        <div className="flex gap-3">
+                          <span className="text-muted-foreground font-medium shrink-0">
+                            Q{index + 1}.
+                          </span>
+                          <span className="text-sm font-medium">{q.question}</span>
+                        </div>
+                        {q.answer && (
+                          <div className="mt-3 pt-3 border-t border-dashed">
+                            <div className="flex items-start gap-2">
+                              <Lightbulb className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1">모범 답변 가이드</p>
+                                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{q.answer}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </AccordionContent>
               </AccordionItem>
             )

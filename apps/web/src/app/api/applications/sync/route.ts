@@ -14,7 +14,7 @@ import { applications } from '@/lib/db/schema'
 import { getUserIdFromRequest } from '@/lib/auth/get-user'
 
 const BookmarkSchema = z.object({
-  platform: z.enum(['wanted', 'saramin']),
+  platform: z.enum(['wanted', 'saramin', 'jobkorea']),
   companyName: z.string(),
   position: z.string(),
   sourceUrl: z.string(),

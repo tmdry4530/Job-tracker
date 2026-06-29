@@ -6,7 +6,6 @@ import { fetchApplicationById } from '@/lib/queries/applications'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { StatusDropdown } from '@/components/features/applications/status-dropdown'
 import { PlatformBadge } from '@/components/features/applications/platform-badge'
 import { DeleteDialog } from '@/components/features/applications/delete-dialog'
 import { BookmarkButton } from '@/components/features/applications/bookmark-button'
@@ -55,10 +54,6 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
             applicationId={application.id}
             isBookmarked={application.is_favorite}
           />
-          <StatusDropdown
-            applicationId={application.id}
-            currentStatus={application.status}
-          />
           <DeleteDialog applicationId={application.id} />
         </div>
       </div>
@@ -68,11 +63,7 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
         <CardHeader>
           <CardTitle>공고 정보</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">저장일</p>
-            <p>{application.saved_at ? formatDate(application.saved_at) : '-'}</p>
-          </div>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
           <div>
             <p className="text-sm font-medium text-muted-foreground">등록일</p>
             <p>{formatDate(application.created_at)}</p>

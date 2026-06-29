@@ -33,7 +33,12 @@ BEGIN
   END IF;
 END $$;
 
--- 6. 기존 상태값을 새 상태값으로 변환
+-- 6. CHECK 제약조건 업데이트 (새 상태값 허용)
+ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_status_check;
+ALTER TABLE applications ADD CONSTRAINT applications_status_check
+  CHECK (status IN ('saved', 'applied', 'closed'));
+
+-- 7. 기존 상태값을 새 상태값으로 변환
 UPDATE applications
 SET status = CASE
   WHEN status IN ('applied', 'document_passed', 'interview') THEN 'applied'
@@ -49,8 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_applications_saved_at ON applications(saved_at DE
 CREATE INDEX IF NOT EXISTS idx_applications_deadline ON applications(deadline);
 
 -- 8. 기존 applied_at 컬럼 삭제 (saved_at으로 대체됨)
--- 주의: 롤백이 필요한 경우를 위해 주석 처리
--- ALTER TABLE applications DROP COLUMN IF EXISTS applied_at;
+ALTER TABLE applications DROP COLUMN IF EXISTS applied_at;
 
 COMMENT ON TABLE applications IS '북마크/스크랩 공고 테이블 (구 지원내역)';
 COMMENT ON COLUMN applications.status IS '북마크 상태: saved(저장됨), applied(지원함), closed(마감됨)';

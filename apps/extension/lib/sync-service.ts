@@ -5,7 +5,7 @@
 
 import type { ParsedBookmark, StoredAuth } from './types'
 import { SYNC } from './constants'
-import { fetchWantedJd, fetchSaraminJd } from './jd-fetcher'
+import { fetchWantedJd, fetchSaraminJd, fetchJobkoreaJd } from './jd-fetcher'
 import { callOcrApi } from './ocr-api'
 import { apiFetch } from './api-client'
 
@@ -27,6 +27,9 @@ interface SyncBookmarkRecord {
   jdContent: string | null
 }
 
+/** 동기화 진행 콜백 타입 */
+export type SyncProgressCallback = (current: number, currentItem?: string) => Promise<void>
+
 /**
  * 중복 제거된 북마크 목록 반환
  */
@@ -43,63 +46,87 @@ function deduplicateBookmarks(bookmarks: ParsedBookmark[]): ParsedBookmark[] {
 }
 
 /**
- * JD 콘텐츠 수집
+ * JD 콘텐츠 + 마감일 수집 (상세페이지에서)
+ * - 원티드/잡코리아: 상세페이지 파싱
+ * - 사람인: 이미지 기반 공고면 OCR 시도
  */
 async function fetchJdContent(
   bookmark: ParsedBookmark,
   token: string
-): Promise<string | null> {
+): Promise<{ content: string | null; deadline: string | null }> {
   if (!bookmark.sourceUrl) {
-    return null
+    return { content: null, deadline: null }
   }
 
   if (bookmark.platform === 'wanted') {
-    return fetchWantedJd(bookmark.sourceUrl)
+    const result = await fetchWantedJd(bookmark.sourceUrl)
+    return { content: result?.content ?? null, deadline: result?.deadline ?? null }
   }
 
   if (bookmark.platform === 'saramin') {
     const result = await fetchSaraminJd(bookmark.sourceUrl)
     if (!result) {
-      return null
+      return { content: null, deadline: null }
     }
 
     // 이미지 기반 공고면 OCR 시도
     if (result.isImage && result.imageUrls.length > 0) {
       const ocrText = await callOcrApi(result.imageUrls, token)
       if (ocrText) {
-        return ocrText
+        return { content: ocrText, deadline: result.deadline }
       }
     }
 
-    return result.content
+    return { content: result.content, deadline: result.deadline }
   }
 
-  return null
+  if (bookmark.platform === 'jobkorea') {
+    const result = await fetchJobkoreaJd(bookmark.sourceUrl)
+    return { content: result?.content ?? null, deadline: result?.deadline ?? null }
+  }
+
+  return { content: null, deadline: null }
 }
 
 /**
  * 북마크 공고를 웹 API로 동기화
+ * - 상세페이지에서 JD/마감일을 수집한 뒤 페이로드에 담아 한 번에 전송
  */
 export async function syncBookmarks(
   auth: StoredAuth,
-  bookmarks: ParsedBookmark[]
+  bookmarks: ParsedBookmark[],
+  onProgress?: SyncProgressCallback
 ): Promise<SyncResult> {
   // 중복 제거
   const uniqueBookmarks = deduplicateBookmarks(bookmarks)
   console.log(`[Sync] Processing ${uniqueBookmarks.length} bookmarks`)
 
-  // 레코드 생성 (필요 시 JD 수집)
+  // 레코드 생성 (필요 시 JD/마감일 수집)
   const records: SyncBookmarkRecord[] = []
+  let processedCount = 0
 
   for (let i = 0; i < uniqueBookmarks.length; i += SYNC.BATCH_SIZE) {
     const batch = uniqueBookmarks.slice(i, i + SYNC.BATCH_SIZE)
 
     for (const bookmark of batch) {
-      let jdContent: string | null = bookmark.jdContent ?? null
+      // 진행 상황 콜백 호출
+      if (onProgress) {
+        await onProgress(processedCount + 1, `${bookmark.companyName} - ${bookmark.position}`)
+      }
 
-      if (!jdContent && bookmark.sourceUrl) {
+      let jdContent: string | null = bookmark.jdContent ?? null
+      let deadline: string | null = bookmark.deadline ?? null
+
+      // JD나 마감일이 없으면 상세페이지에서 수집
+      if (bookmark.sourceUrl && (!jdContent || !deadline)) {
         try {
-          jdContent = await fetchJdContent(bookmark, auth.token)
+          const jdResult = await fetchJdContent(bookmark, auth.token)
+          if (!jdContent) {
+            jdContent = jdResult.content
+          }
+          if (!deadline) {
+            deadline = jdResult.deadline
+          }
         } catch (error) {
           console.error('[Sync] JD fetch error:', error)
         }
@@ -111,9 +138,11 @@ export async function syncBookmarks(
         position: bookmark.position,
         sourceUrl: bookmark.sourceUrl,
         savedAt: bookmark.savedAt ?? null,
-        deadline: bookmark.deadline ?? null,
+        deadline,
         jdContent,
       })
+
+      processedCount++
     }
   }
 

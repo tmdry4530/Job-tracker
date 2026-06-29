@@ -98,15 +98,22 @@ export function parseJdFromHtml(html: string): string | null {
   }
 }
 
+/** JD 결과 타입 (마감일 포함) */
+export interface JdResult {
+  content: string | null
+  deadline: string | null
+}
+
 /** 사람인 JD 결과 타입 */
 export interface SaraminJdResult {
   content: string
   isImage: boolean
   imageUrls: string[]
+  deadline: string | null
 }
 
 /**
- * 사람인 공고 URL에서 JD 가져오기 (백그라운드 탭 + 스크립트 주입)
+ * 사람인 공고 URL에서 JD + 마감일 가져오기 (백그라운드 탭 + 스크립트 주입)
  */
 export async function fetchSaraminJd(sourceUrl: string): Promise<SaraminJdResult | null> {
   let tabId: number | undefined
@@ -143,19 +150,46 @@ export async function fetchSaraminJd(sourceUrl: string): Promise<SaraminJdResult
     // iframe 로드 대기
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.IFRAME_LOAD))
 
-    // 스크립트 주입하여 JD 추출
+    // 스크립트 주입하여 JD + 마감일 추출
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
+        // 마감일 추출 (메인 페이지에서)
+        let deadline: string | null = null
+        const pageText = document.body.innerText || ''
+
+        // 사람인 마감일 패턴
+        const deadlinePatterns = [
+          /마감일[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /접수마감[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /~\s*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*(?:까지|마감)/,
+          /(\d{2}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*(?:\(.\)|까지|마감)/,
+        ]
+
+        for (const pattern of deadlinePatterns) {
+          const match = pageText.match(pattern)
+          if (match && match[1]) {
+            let dateStr = match[1].replace(/[.\/]/g, '-')
+            // 2자리 연도를 4자리로 변환
+            if (dateStr.match(/^\d{2}-/)) {
+              dateStr = '20' + dateStr
+            }
+            deadline = dateStr
+            break
+          }
+        }
+
+        // JD 추출 (iframe에서)
         const iframe = document.querySelector('iframe.iframe_content, iframe[id^="iframe_content"]') as HTMLIFrameElement
         if (!iframe) {
-          return { content: '', isImage: false, imageUrls: [] }
+          return { content: '', isImage: false, imageUrls: [], deadline }
         }
 
         try {
           const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
           if (!iframeDoc?.body) {
-            return { content: '', isImage: false, imageUrls: [] }
+            return { content: '', isImage: false, imageUrls: [], deadline }
           }
 
           const images = iframeDoc.body.querySelectorAll('img')
@@ -169,16 +203,16 @@ export async function fetchSaraminJd(sourceUrl: string): Promise<SaraminJdResult
                 imageUrls.push(src)
               }
             })
-            return { content: '[이미지 형식 공고]', isImage: true, imageUrls }
+            return { content: '[이미지 형식 공고]', isImage: true, imageUrls, deadline }
           }
 
           if (textContent.length > 100) {
-            return { content: textContent, isImage: false, imageUrls: [] }
+            return { content: textContent, isImage: false, imageUrls: [], deadline }
           }
 
-          return { content: '', isImage: false, imageUrls: [] }
+          return { content: '', isImage: false, imageUrls: [], deadline }
         } catch {
-          return { content: '', isImage: false, imageUrls: [] }
+          return { content: '', isImage: false, imageUrls: [], deadline }
         }
       },
     })
@@ -188,7 +222,7 @@ export async function fetchSaraminJd(sourceUrl: string): Promise<SaraminJdResult
     }
 
     const result = results[0]?.result as SaraminJdResult | null
-    if (result && result.content) {
+    if (result && (result.content || result.deadline)) {
       return result
     }
 
@@ -203,9 +237,142 @@ export async function fetchSaraminJd(sourceUrl: string): Promise<SaraminJdResult
 }
 
 /**
- * 원티드 공고 URL에서 JD 가져오기 (백그라운드 탭 + 스크립트 주입)
+ * 잡코리아 공고 URL에서 JD + 마감일 가져오기 (백그라운드 탭 + 스크립트 주입)
  */
-export async function fetchWantedJd(sourceUrl: string): Promise<string | null> {
+export async function fetchJobkoreaJd(sourceUrl: string): Promise<JdResult | null> {
+  if (!sourceUrl || !sourceUrl.includes(PLATFORM_URLS.JOBKOREA_JD)) {
+    return null
+  }
+
+  let tabId: number | undefined
+  let windowId: number | undefined
+
+  try {
+    const window = await chrome.windows.create({
+      url: sourceUrl,
+      state: 'minimized',
+      focused: false,
+    })
+    windowId = window.id
+    tabId = window.tabs?.[0]?.id
+
+    if (!tabId) {
+      return null
+    }
+
+    // 페이지 로드 대기
+    await new Promise<void>((resolve) => {
+      const listener = (updatedTabId: number, info: chrome.tabs.TabChangeInfo) => {
+        if (updatedTabId === tabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener)
+          resolve()
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener)
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener)
+        resolve()
+      }, TIMEOUTS.PAGE_LOAD_MAX)
+    })
+
+    // DOM 렌더링 대기
+    await new Promise(resolve => setTimeout(resolve, TIMEOUTS.REACT_RENDER))
+
+    // 스크립트 주입하여 JD + 마감일 추출
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        // JD 추출
+        let content: string | null = null
+
+        // 잡코리아 JD 컨테이너 셀렉터들
+        const jdSelectors = [
+          '.tbRow',
+          '.artReadJobSum',
+          '.detailContents',
+          '.recruitment-detail',
+          '.job-detail',
+          '[class*="detail"]',
+        ]
+
+        for (const selector of jdSelectors) {
+          const el = document.querySelector(selector)
+          if (el) {
+            const text = (el as HTMLElement).innerText?.trim()
+            if (text && text.length > 100) {
+              content = text
+              break
+            }
+          }
+        }
+
+        // fallback: article 또는 main 태그
+        if (!content) {
+          const article = document.querySelector('article, main, .article')
+          if (article) {
+            const text = (article as HTMLElement).innerText?.trim()
+            if (text && text.length > 100) {
+              content = text
+            }
+          }
+        }
+
+        // 마감일 추출
+        let deadline: string | null = null
+        const pageText = document.body.innerText || ''
+
+        // 잡코리아 마감일 패턴
+        const deadlinePatterns = [
+          /마감일[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /접수마감[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /~\s*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+          /(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*(?:까지|마감)/,
+          /(\d{2}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*(?:\(.\)|까지|마감)/,
+        ]
+
+        for (const pattern of deadlinePatterns) {
+          const match = pageText.match(pattern)
+          if (match && match[1]) {
+            let dateStr = match[1].replace(/[.\/]/g, '-')
+            // 2자리 연도를 4자리로 변환
+            if (dateStr.match(/^\d{2}-/)) {
+              dateStr = '20' + dateStr
+            }
+            deadline = dateStr
+            break
+          }
+        }
+
+        return { content, deadline }
+      },
+    })
+
+    if (windowId) {
+      await chrome.windows.remove(windowId)
+    }
+
+    const result = results[0]?.result as { content: string | null; deadline: string | null } | null
+    if (result) {
+      return {
+        content: result.content ? truncateText(result.content) : null,
+        deadline: result.deadline,
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error('[JD Fetcher] Failed to fetch Jobkorea JD:', error)
+    if (windowId) {
+      try { await chrome.windows.remove(windowId) } catch { /* ignore */ }
+    }
+    return null
+  }
+}
+
+/**
+ * 원티드 공고 URL에서 JD + 마감일 가져오기 (백그라운드 탭 + 스크립트 주입)
+ */
+export async function fetchWantedJd(sourceUrl: string): Promise<JdResult | null> {
   if (!sourceUrl || !sourceUrl.includes(PLATFORM_URLS.WANTED_JD)) {
     return null
   }
@@ -244,7 +411,7 @@ export async function fetchWantedJd(sourceUrl: string): Promise<string | null> {
     // React 렌더링 대기
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.REACT_RENDER))
 
-    // 스크립트 주입하여 JD 추출
+    // 스크립트 주입하여 JD + 마감일 추출
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
@@ -258,24 +425,51 @@ export async function fetchWantedJd(sourceUrl: string): Promise<string | null> {
           }
         }
 
-        return new Promise<string | null>((resolve) => {
+        return new Promise<{ content: string | null; deadline: string | null }>((resolve) => {
           setTimeout(() => {
+            // JD 추출
+            let content: string | null = null
             const jdSection = document.querySelector('[class*="JobDescription_JobDescription"]') ||
                               document.querySelector('[class*="JobDescription__"]') ||
                               document.querySelector('.JobDescription')
 
             if (jdSection) {
               const text = (jdSection as HTMLElement).innerText?.trim()
-              resolve(text && text.length > 100 ? text : null)
+              content = text && text.length > 100 ? text : null
             } else {
               const detail = document.querySelector('[class*="JobDetail_jobDetail"]')
               if (detail) {
                 const text = (detail as HTMLElement).innerText?.trim()
-                resolve(text && text.length > 100 ? text : null)
-              } else {
-                resolve(null)
+                content = text && text.length > 100 ? text : null
               }
             }
+
+            // 마감일 추출 - 원티드는 "마감일" 또는 날짜 형식으로 표시
+            let deadline: string | null = null
+
+            // 방법 1: 마감일 라벨 근처 텍스트 찾기
+            const allText = document.body.innerText
+            const deadlinePatterns = [
+              /마감일[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+              /마감[:\s]*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+              /(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*마감/,
+              /접수\s*기간[^~]*~\s*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/,
+            ]
+
+            for (const pattern of deadlinePatterns) {
+              const match = allText.match(pattern)
+              if (match && match[1]) {
+                deadline = match[1].replace(/[.\/]/g, '-')
+                break
+              }
+            }
+
+            // 방법 2: 상시채용 체크
+            if (!deadline && (allText.includes('상시') || allText.includes('채용시'))) {
+              deadline = null // 상시채용은 마감일 없음
+            }
+
+            resolve({ content, deadline })
           }, 1000)
         })
       },
@@ -285,9 +479,12 @@ export async function fetchWantedJd(sourceUrl: string): Promise<string | null> {
       await chrome.windows.remove(windowId)
     }
 
-    const jdContent = results[0]?.result as string | null
-    if (jdContent) {
-      return truncateText(jdContent)
+    const result = results[0]?.result as { content: string | null; deadline: string | null } | null
+    if (result) {
+      return {
+        content: result.content ? truncateText(result.content) : null,
+        deadline: result.deadline,
+      }
     }
 
     return null

@@ -38,7 +38,7 @@ export const JD_SUMMARY_SYSTEM_PROMPT = `당신은 채용 공고 분석 전문�
 한국어로 작성해주세요.`
 
 export const INTERVIEW_QUESTIONS_SYSTEM_PROMPT = `당신은 채용 면접 전문가입니다.
-주어진 Job Description(JD)를 바탕으로 실제 면접에서 나올 수 있는 예상 질문을 생성해주세요.
+주어진 Job Description(JD)를 바탕으로 실제 면접에서 나올 수 있는 예상 질문과 모범 답변을 생성해주세요.
 
 다음 카테고리별로 질문을 생성해주세요:
 
@@ -50,15 +50,18 @@ export const INTERVIEW_QUESTIONS_SYSTEM_PROMPT = `당신은 채용 면접 전문
 각 카테고리별로 1-3개씩 질문을 생성하세요.
 총 7-10개의 질문을 생성해주세요.
 
+각 질문에 대해 면접에서 좋은 인상을 줄 수 있는 모범 답변 가이드도 함께 제공해주세요.
+답변은 구체적이고 실질적인 내용으로, 지원자가 참고하여 자신만의 답변을 준비할 수 있도록 작성해주세요.
+
 응답 형식 (JSON 배열):
 [
-  {"question": "질문 내용", "category": "technical"},
-  {"question": "질문 내용", "category": "experience"},
+  {"question": "질문 내용", "answer": "모범 답변 가이드", "category": "technical"},
+  {"question": "질문 내용", "answer": "모범 답변 가이드", "category": "experience"},
   ...
 ]
 
 반드시 유효한 JSON 배열 형식으로만 응답해주세요. 다른 텍스트는 포함하지 마세요.
-한국어로 질문을 작성해주세요.`
+한국어로 질문과 답변을 작성해주세요.`
 
 export function createJdSummaryUserPrompt(jdContent: string, companyName: string, position: string): string {
   const sanitizedJd = sanitizeJdContent(jdContent)

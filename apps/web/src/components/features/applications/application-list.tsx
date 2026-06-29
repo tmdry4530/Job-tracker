@@ -10,12 +10,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { StatusDropdown } from './status-dropdown'
 import { PlatformBadge } from './platform-badge'
 import { EmptyState } from './empty-state'
 import { BookmarkButton } from './bookmark-button'
 import { ApplicationCard } from './application-card'
-import { formatDate } from '@job-tracker/shared'
+import { DeadlineBadge } from './deadline-badge'
 import type { Application } from '@job-tracker/shared'
 
 interface ApplicationListProps {
@@ -45,8 +44,7 @@ export function ApplicationList({ applications }: ApplicationListProps) {
               <TableHead className="w-[100px]">플랫폼</TableHead>
               <TableHead>회사명</TableHead>
               <TableHead>포지션</TableHead>
-              <TableHead className="w-[100px]">저장일</TableHead>
-              <TableHead className="w-[100px]">상태</TableHead>
+              <TableHead className="w-[100px]">마감일</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -78,14 +76,8 @@ export function ApplicationList({ applications }: ApplicationListProps) {
                 <TableCell className="text-muted-foreground">
                   {application.position}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {application.saved_at ? formatDate(application.saved_at) : '-'}
-                </TableCell>
                 <TableCell>
-                  <StatusDropdown
-                    applicationId={application.id}
-                    currentStatus={application.status}
-                  />
+                  <DeadlineBadge deadline={application.deadline} />
                 </TableCell>
               </TableRow>
             ))}

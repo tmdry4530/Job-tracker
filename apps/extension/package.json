@@ -8,7 +8,11 @@
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
+    "build:dev": "plasmo build --env=development",
+    "build:prod": "plasmo build --env=production",
     "package": "plasmo package",
+    "package:dev": "plasmo package --env=development",
+    "package:prod": "plasmo package --env=production",
     "lint": "echo 'Extension lint placeholder'",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
@@ -37,12 +41,15 @@
     "host_permissions": [
       "https://www.wanted.co.kr/*",
       "https://www.saramin.co.kr/*",
+      "https://www.jobkorea.co.kr/*",
       "http://localhost:3000/*",
       "https://*.up.railway.app/*"
     ],
     "permissions": [
       "storage",
-      "activeTab"
+      "activeTab",
+      "scripting",
+      "tabs"
     ]
   }
 }

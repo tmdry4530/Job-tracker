@@ -1,7 +1,7 @@
 import type { PlasmoCSConfig } from 'plasmo'
 import type { ParsedApplication } from '~lib/types'
 import { showOverlay, hideOverlay } from '~lib/overlay'
-import { waitForDOM, waitForSelector, extractText, extractLink, parseDate } from '~lib/dom-utils'
+import { waitForDOM } from '~lib/dom-utils'
 import { sendParseResult } from '~lib/parse-result'
 
 export const config: PlasmoCSConfig = {
@@ -16,196 +16,100 @@ export const config: PlasmoCSConfig = {
  * 원티드 북마크 페이지 파서
  * - URL: https://www.wanted.co.kr/profile/bookmarks
  * - DOM에서 북마크한 공고 목록을 파싱
- * - job_id를 활용하여 상세 공고 URL 생성
+ * - /wd/{job_id} 링크에서 job_id 추출
  */
-
-// API 인터셉터에서 전달받은 데이터 저장
-interface InterceptedApplication {
-  job_id: number
-  company_name: string
-  company_id: number
-  status: string
-  create_time: string
-  position?: string
-}
-
-let interceptedApiData: InterceptedApplication[] = []
-
-// 인터셉터(MAIN world)에서 postMessage로 보내는 데이터 수신
-window.addEventListener('message', (event: MessageEvent) => {
-  if (event.source !== window) return
-
-  if (event.data?.type === 'WANTED_APPLICATIONS_INTERCEPTED' && event.data?.applications) {
-    interceptedApiData = event.data.applications
-    console.log('[Wanted Parser] Received intercepted API data via postMessage:', interceptedApiData.length)
-  }
-})
-
-/** 지원 목록 컨테이너 셀렉터 */
-const APPLICATION_LIST_SELECTORS = [
-  '[class*="List_List_table"]',
-  '[class*="List_table"]',
-  '[class*="ApplicationList"]',
-]
 
 /**
- * DOM에서 회사명-포지션 매핑 추출
+ * 북마크 카드에서 데이터 추출
  */
-function extractCompanyPositionMapFromDom(): Map<string, string> {
-  const companyPositionMap = new Map<string, string>()
-  const rows = document.querySelectorAll('[class*="List_List_table_tr"]')
-
-  rows.forEach((row, index) => {
-    if (index === 0) {
-      const headerCheck = row.querySelector('[class*="table_td_company_name"]')
-      if (headerCheck?.textContent?.trim() === '지원 회사') return
-    }
-
-    const companyCell = row.querySelector('[class*="table_td_company_name"]')
-    const positionCell = row.querySelector('[class*="table_td_position"]')
-
-    const companyName = companyCell?.textContent?.trim() || ''
-    const position = positionCell?.textContent?.trim() || ''
-
-    if (companyName && position && companyName !== '지원 회사') {
-      companyPositionMap.set(companyName, position)
-    }
-  })
-
-  return companyPositionMap
-}
-
-/**
- * 인터셉트된 API 데이터 + DOM 포지션을 ParsedApplication으로 변환
- */
-function convertInterceptedData(data: InterceptedApplication[]): ParsedApplication[] {
-  const companyPositionMap = extractCompanyPositionMapFromDom()
-
-  return data.map((app) => {
-    const companyName = app.company_name || '알 수 없음'
-    const position = companyPositionMap.get(companyName) || app.position || '포지션 정보 없음'
-
-    return {
-      companyName,
-      position,
-      savedAt: app.create_time ? app.create_time.split('T')[0] : new Date().toISOString().split('T')[0],
-      sourceUrl: app.job_id ? `https://www.wanted.co.kr/wd/${app.job_id}` : '',
-      platform: 'wanted' as const,
-    }
-  })
-}
-
-/**
- * API 데이터 대기 (인터셉터에서 데이터를 받을 때까지)
- */
-async function waitForInterceptedData(timeoutMs: number = 5000): Promise<InterceptedApplication[]> {
-  if (interceptedApiData.length > 0) {
-    return interceptedApiData
+function parseBookmarkCard(card: Element): ParsedApplication | null {
+  // 링크 찾기 - /wd/ 패턴
+  const link = card.querySelector('a[href*="/wd/"]') as HTMLAnchorElement
+  if (!link) {
+    console.log('[Wanted Parser] No /wd/ link found in card')
+    return null
   }
 
-  return new Promise((resolve) => {
-    const startTime = Date.now()
+  const sourceUrl = link.href
 
-    const checkInterval = setInterval(() => {
-      if (interceptedApiData.length > 0) {
-        clearInterval(checkInterval)
-        resolve(interceptedApiData)
-      } else if (Date.now() - startTime >= timeoutMs) {
-        clearInterval(checkInterval)
-        resolve([])
-      }
-    }, 200)
-  })
+  // 정확한 셀렉터로 데이터 추출
+  // 포지션: wds-component="card-title" 속성을 가진 요소
+  const positionEl = card.querySelector('[wds-component="card-title"]') ||
+                     card.querySelector('p[class*="card-title"]')
+
+  // 회사명: CompanyNameWithLocationPeriod__company 클래스를 포함하는 요소
+  const companyEl = card.querySelector('[class*="CompanyNameWithLocationPeriod__company"]') ||
+                    card.querySelector('[class*="__company"]')
+
+  const position = positionEl?.textContent?.trim() || '포지션 정보 없음'
+  const companyName = companyEl?.textContent?.trim() || '회사명 없음'
+
+  console.log('[Wanted Parser] Parsed:', { position, companyName, sourceUrl })
+
+  return {
+    companyName,
+    position,
+    savedAt: new Date().toISOString().split('T')[0],
+    sourceUrl,
+    platform: 'wanted',
+  }
 }
 
 /**
- * 원티드 지원현황 페이지에서 지원 내역 파싱 (DOM 폴백)
+ * 원티드 북마크 페이지에서 북마크 목록 파싱
  */
-function parseWantedApplicationsFromDom(): ParsedApplication[] {
+function parseWantedBookmarks(): ParsedApplication[] {
   const applications: ParsedApplication[] = []
 
-  const selectors = [
-    '[class*="List_List_table_tr"]',
-    '[class*="List_table_tr"]',
-    '[class*="ApplicationCard"]',
-  ]
+  // 방법 1: /wd/ 링크가 있는 모든 li 요소 찾기
+  const allLinks = document.querySelectorAll('a[href*="/wd/"]')
+  console.log(`[Wanted Parser] Found ${allLinks.length} /wd/ links`)
 
-  let applicationItems: NodeListOf<Element> | null = null
+  // 각 링크의 부모 li 또는 카드 컨테이너 찾기
+  const processedUrls = new Set<string>()
 
-  for (const selector of selectors) {
-    const items = document.querySelectorAll(selector)
-    if (items.length > 0) {
-      applicationItems = items
-      console.log(`[Wanted Parser] Found ${items.length} items with selector: ${selector}`)
-      break
+  allLinks.forEach(link => {
+    const href = (link as HTMLAnchorElement).href
+    if (processedUrls.has(href)) return
+    processedUrls.add(href)
+
+    // 가장 가까운 li 부모 찾기
+    const card = link.closest('li') || link.parentElement
+    if (!card) return
+
+    const app = parseBookmarkCard(card)
+    if (app) {
+      applications.push(app)
     }
-  }
-
-  if (!applicationItems || applicationItems.length === 0) {
-    return applications
-  }
-
-  const dataRows = Array.from(applicationItems).slice(1)
-
-  for (const item of dataRows) {
-    try {
-      const application = parseApplicationItem(item)
-      if (application) {
-        applications.push(application)
-      }
-    } catch (error) {
-      console.error('[Wanted Parser] Failed to parse item:', error)
-    }
-  }
+  })
 
   return applications
 }
 
 /**
- * 개별 북마크 항목 파싱
+ * 셀렉터로 요소 대기
  */
-function parseApplicationItem(item: Element): ParsedApplication | null {
-  const companyName = extractText(item, [
-    '[class*="table_td_company_name"]',
-    '[class*="company_name"]',
-    '[class*="company"]',
-  ])
+async function waitForBookmarks(timeoutMs: number = 5000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const startTime = Date.now()
 
-  const position = extractText(item, [
-    '[class*="table_td_position"]',
-    '[class*="position"]',
-    '[class*="title"]',
-  ])
+    const check = () => {
+      const links = document.querySelectorAll('a[href*="/wd/"]')
+      if (links.length > 0) {
+        resolve(true)
+        return
+      }
 
-  const savedAtText = extractText(item, [
-    '[class*="table_td_create_time"]',
-    '[class*="create_time"]',
-    '[class*="date"]',
-    'time',
-  ])
+      if (Date.now() - startTime >= timeoutMs) {
+        resolve(false)
+        return
+      }
 
-  let sourceUrl = extractLink(item, [
-    'a[href*="/wd/"]',
-    'a[href*="/position/"]',
-    'a',
-  ])
+      setTimeout(check, 300)
+    }
 
-  if (!companyName && !position) {
-    return null
-  }
-
-  if (!sourceUrl) {
-    const searchQuery = encodeURIComponent(`${companyName} ${position}`)
-    sourceUrl = `https://www.wanted.co.kr/search?query=${searchQuery}`
-  }
-
-  return {
-    companyName: companyName || '알 수 없음',
-    position: position || '알 수 없음',
-    savedAt: parseDate(savedAtText),
-    sourceUrl,
-    platform: 'wanted',
-  }
+    check()
+  })
 }
 
 /**
@@ -219,29 +123,18 @@ async function main(): Promise<void> {
   try {
     await waitForDOM()
 
-    const hasApplicationList = await waitForSelector(APPLICATION_LIST_SELECTORS)
+    // 북마크 링크가 나타날 때까지 대기
+    const hasBookmarks = await waitForBookmarks(8000)
 
-    if (!hasApplicationList) {
+    if (!hasBookmarks) {
       showOverlay('북마크 공고가 없거나 페이지를 찾을 수 없습니다', 'error')
       hideOverlay()
       await sendParseResult('wanted', [], '북마크 목록을 찾을 수 없습니다')
       return
     }
 
-    let applications: ParsedApplication[] = []
-
-    // 1. 먼저 인터셉터에서 API 데이터를 받았는지 확인
-    console.log('[Wanted Parser] Waiting for intercepted API data...')
-    const apiData = await waitForInterceptedData(3000)
-
-    if (apiData.length > 0) {
-      console.log(`[Wanted Parser] Using intercepted API data: ${apiData.length} items`)
-      applications = convertInterceptedData(apiData)
-    } else {
-      // 2. API 데이터 없으면 DOM 파싱으로 폴백
-      console.log('[Wanted Parser] No API data, falling back to DOM parsing')
-      applications = parseWantedApplicationsFromDom()
-    }
+    // DOM에서 북마크 파싱
+    const applications = parseWantedBookmarks()
 
     if (applications.length === 0) {
       showOverlay('북마크 공고가 없습니다', 'success')
@@ -250,13 +143,12 @@ async function main(): Promise<void> {
       return
     }
 
-    const sourceType = apiData.length > 0 ? 'API' : 'DOM'
-    showOverlay(`${applications.length}개의 북마크 공고를 찾았습니다 (${sourceType})`, 'success')
+    showOverlay(`${applications.length}개의 북마크 공고를 찾았습니다`, 'success')
     hideOverlay()
 
     await sendParseResult('wanted', applications)
 
-    console.log('[Wanted Parser] Parsed applications:', applications)
+    console.log('[Wanted Parser] Parsed bookmarks:', applications)
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'

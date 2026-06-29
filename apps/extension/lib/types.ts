@@ -3,7 +3,7 @@
  */
 
 /** 지원 플랫폼 */
-export type Platform = 'wanted' | 'saramin'
+export type Platform = 'wanted' | 'saramin' | 'jobkorea'
 
 /** 북마크 상태 */
 export type BookmarkStatus = 'saved' | 'applied' | 'closed'
@@ -85,8 +85,18 @@ export interface ParseState {
   lastParsed: {
     wanted?: number
     saramin?: number
+    jobkorea?: number
   }
   pendingApplications: ParsedApplication[]
+}
+
+/**
+ * 동기화 진행 상황
+ */
+export interface SyncProgress {
+  current: number
+  total: number
+  currentItem?: string
 }
 
 /**
