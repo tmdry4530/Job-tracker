@@ -5,8 +5,8 @@
  * 빌링키 발급 후 첫 결제 및 구독 생성
  */
 
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getUserIdFromRequest } from '@/lib/auth/get-user'
 import { issueBillingKey, chargeBillingKey } from '@/lib/toss'
 import {
   createSubscription,
@@ -15,7 +15,7 @@ import {
 import { PREMIUM_PRICE } from '@job-tracker/shared'
 import { envHelpers } from '@/lib/env'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     // 토스페이먼츠 설정 확인
     if (!envHelpers.toss.isConfigured) {
@@ -25,14 +25,10 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabase = await createClient()
-
     // 인증 확인
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const userId = await getUserIdFromRequest(request)
 
-    if (!user) {
+    if (!userId) {
       return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
     }
 
@@ -47,7 +43,7 @@ export async function POST(request: Request) {
     }
 
     // customerKey 검증 (사용자 ID와 일치해야 함)
-    if (customerKey !== user.id) {
+    if (customerKey !== userId) {
       return NextResponse.json(
         { error: '잘못된 customerKey입니다.' },
         { status: 400 }
@@ -67,7 +63,7 @@ export async function POST(request: Request) {
     const billing = billingResult.data
 
     // 2. 첫 결제 실행
-    const orderId = `ORDER_${user.id}_${Date.now()}`
+    const orderId = `ORDER_${userId}_${Date.now()}`
     const chargeResult = await chargeBillingKey(
       billing.billingKey,
       customerKey,
@@ -89,8 +85,8 @@ export async function POST(request: Request) {
     const now = new Date()
     const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 
-    const subscriptionResult = await createSubscription(supabase, {
-      user_id: user.id,
+    const subscriptionResult = await createSubscription({
+      user_id: userId,
       billing_key: billing.billingKey,
       customer_key: customerKey,
       card_company: billing.card?.issuerCode || null,
@@ -110,8 +106,8 @@ export async function POST(request: Request) {
     }
 
     // 4. 결제 내역 저장
-    await createPaymentHistory(supabase, {
-      user_id: user.id,
+    await createPaymentHistory({
+      user_id: userId,
       subscription_id: subscriptionResult.data!.id,
       payment_key: payment.paymentKey,
       order_id: orderId,

@@ -1,41 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
+import { getUserIdFromRequest } from '@/lib/auth/get-user'
 import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 
 const OcrRequestSchema = z.object({
   imageUrls: z.array(z.string().url()).min(1, '이미지 URL이 필요합니다'),
 })
-
-/**
- * Authorization 헤더 또는 쿠키로 인증
- */
-async function getAuthenticatedUser(request: NextRequest) {
-  // 먼저 Authorization 헤더 확인 (익스텐션에서 호출 시)
-  const authHeader = request.headers.get('Authorization')
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.substring(7)
-    const supabase = createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    const { data: { user }, error } = await supabase.auth.getUser(token)
-    if (!error && user) {
-      return { user, supabase }
-    }
-  }
-
-  // 쿠키 기반 인증 (웹에서 호출 시)
-  const supabase = await createClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (!error && user) {
-    return { user, supabase }
-  }
-
-  return null
-}
 
 interface ClovaOcrField {
   inferText: string
@@ -151,8 +122,8 @@ async function callClovaOcr(imageUrl: string): Promise<string> {
 export async function POST(request: NextRequest) {
   try {
     // 인증 확인 (Authorization 헤더 또는 쿠키)
-    const auth = await getAuthenticatedUser(request)
-    if (!auth) {
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
@@ -161,7 +132,7 @@ export async function POST(request: NextRequest) {
 
     // Rate limiting 체크
     const rateLimitResult = checkRateLimit(
-      `ocr:${auth.user.id}`,
+      `ocr:${userId}`,
       RATE_LIMITS.OCR
     )
     if (!rateLimitResult.success) {

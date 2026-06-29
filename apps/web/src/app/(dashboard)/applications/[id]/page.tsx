@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { requireUserId } from '@/lib/auth/get-user'
 import { fetchApplicationById } from '@/lib/queries/applications'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,9 +19,9 @@ interface ApplicationDetailPageProps {
 
 export default async function ApplicationDetailPage({ params }: ApplicationDetailPageProps) {
   const { id } = await params
-  const supabase = await createClient()
+  const userId = await requireUserId()
 
-  const { data: application, error } = await fetchApplicationById(supabase, id)
+  const { data: application, error } = await fetchApplicationById(userId, id)
 
   if (error || !application) {
     notFound()

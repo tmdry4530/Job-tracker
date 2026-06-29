@@ -12,24 +12,20 @@ export type BookmarkStatus = 'saved' | 'applied' | 'closed'
 export type ApplicationStatus = BookmarkStatus
 
 /**
- * Extension에서 저장하는 세션 정보 타입
+ * Extension에서 저장하는 인증 정보 타입
+ * - 웹 세션에서 발급받은 Bearer 토큰과 userId
  */
-export interface StoredSession {
-  access_token: string
-  refresh_token: string
-  expires_at: number
-  user: {
-    id: string
-    email: string
-  }
+export interface StoredAuth {
+  token: string
+  userId: string
 }
 
 /**
  * Background Script와 Content Script 간 메시지 타입
  */
-export interface SessionMessage {
-  type: 'SESSION_UPDATE'
-  session: StoredSession | null
+export interface AuthMessage {
+  type: 'AUTH_UPDATE'
+  auth: StoredAuth | null
 }
 
 /**
@@ -161,7 +157,7 @@ export interface PopupMessage {
  * 모든 Extension 메시지 타입 유니온
  */
 export type ExtensionMessage =
-  | SessionMessage
+  | AuthMessage
   | ParseMessage
   | SyncMessage
   | PopupMessage

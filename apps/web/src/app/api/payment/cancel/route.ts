@@ -6,13 +6,13 @@
  * (현재 결제 주기는 유지)
  */
 
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getUserIdFromRequest } from '@/lib/auth/get-user'
 import { deleteBillingKey } from '@/lib/toss'
 import { fetchSubscription, cancelSubscription } from '@/lib/queries/subscription'
 import { envHelpers } from '@/lib/env'
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     // 토스페이먼츠 설정 확인
     if (!envHelpers.toss.isConfigured) {
@@ -22,19 +22,15 @@ export async function POST() {
       )
     }
 
-    const supabase = await createClient()
-
     // 인증 확인
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const userId = await getUserIdFromRequest(request)
 
-    if (!user) {
+    if (!userId) {
       return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
     }
 
     // 현재 구독 조회
-    const subscriptionResult = await fetchSubscription(supabase, user.id)
+    const subscriptionResult = await fetchSubscription(userId)
 
     if (!subscriptionResult.data) {
       return NextResponse.json(
@@ -63,8 +59,8 @@ export async function POST() {
       // 빌링키 삭제 실패해도 DB에서는 취소 처리
     }
 
-    // 구독 취소 처리
-    const cancelResult = await cancelSubscription(supabase, subscription.id)
+    // 구독 취소 처리 (userId로 이중 격리)
+    const cancelResult = await cancelSubscription(userId, subscription.id)
 
     if (cancelResult.error) {
       return NextResponse.json(

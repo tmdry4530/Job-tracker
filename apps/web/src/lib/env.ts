@@ -2,15 +2,24 @@
  * 환경변수 검증 및 타입 안전한 접근
  *
  * 서버 시작 시 필수 환경변수가 설정되어 있는지 확인합니다.
+ * (Supabase → Railway PostgreSQL + Auth.js 마이그레이션)
  */
 
 type EnvConfig = {
-  // Supabase
-  NEXT_PUBLIC_SUPABASE_URL: string
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: string
+  // Database (Railway PostgreSQL)
+  DATABASE_URL: string
+
+  // Auth.js
+  AUTH_SECRET: string
 
   // App
-  NEXT_PUBLIC_APP_URL: string
+  NEXT_PUBLIC_APP_URL?: string
+
+  // OAuth (선택)
+  AUTH_GOOGLE_ID?: string
+  AUTH_GOOGLE_SECRET?: string
+  AUTH_KAKAO_ID?: string
+  AUTH_KAKAO_SECRET?: string
 
   // Claude API (선택)
   CLAUDE_API_KEY?: string
@@ -24,15 +33,12 @@ type EnvConfig = {
   // Toss Payments (선택)
   NEXT_PUBLIC_TOSS_CLIENT_KEY?: string
   TOSS_SECRET_KEY?: string
+  TOSS_WEBHOOK_SECRET?: string
 }
 
-type RequiredEnvKeys = 'NEXT_PUBLIC_SUPABASE_URL' | 'NEXT_PUBLIC_SUPABASE_ANON_KEY' | 'NEXT_PUBLIC_APP_URL'
+type RequiredEnvKeys = 'DATABASE_URL' | 'AUTH_SECRET'
 
-const requiredKeys: RequiredEnvKeys[] = [
-  'NEXT_PUBLIC_SUPABASE_URL',
-  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  'NEXT_PUBLIC_APP_URL',
-]
+const requiredKeys: RequiredEnvKeys[] = ['DATABASE_URL', 'AUTH_SECRET']
 
 function validateEnv(): EnvConfig {
   const missingKeys: string[] = []
@@ -45,17 +51,22 @@ function validateEnv(): EnvConfig {
 
   if (missingKeys.length > 0) {
     throw new Error(
-      `Missing required environment variables:\n${missingKeys.map((k) => `  - ${k}`).join('\n')}\n\nPlease check your .env.local file.`
+      `Missing required environment variables:\n${missingKeys
+        .map((k) => `  - ${k}`)
+        .join('\n')}\n\nPlease check your .env file.`
     )
   }
 
   return {
-    // 필수 환경변수
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL!,
+    DATABASE_URL: process.env.DATABASE_URL!,
+    AUTH_SECRET: process.env.AUTH_SECRET!,
 
-    // 선택 환경변수
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID,
+    AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET,
+    AUTH_KAKAO_ID: process.env.AUTH_KAKAO_ID,
+    AUTH_KAKAO_SECRET: process.env.AUTH_KAKAO_SECRET,
+
     CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     SENTRY_ORG: process.env.SENTRY_ORG,
@@ -63,6 +74,7 @@ function validateEnv(): EnvConfig {
     SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
     NEXT_PUBLIC_TOSS_CLIENT_KEY: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY,
     TOSS_SECRET_KEY: process.env.TOSS_SECRET_KEY,
+    TOSS_WEBHOOK_SECRET: process.env.TOSS_WEBHOOK_SECRET,
   }
 }
 
@@ -78,12 +90,14 @@ export function getEnv(): EnvConfig {
 
 // 개별 환경변수 접근 헬퍼
 export const envHelpers = {
-  supabase: {
+  db: {
     get url() {
-      return getEnv().NEXT_PUBLIC_SUPABASE_URL
+      return getEnv().DATABASE_URL
     },
-    get anonKey() {
-      return getEnv().NEXT_PUBLIC_SUPABASE_ANON_KEY
+  },
+  auth: {
+    get secret() {
+      return getEnv().AUTH_SECRET
     },
   },
   app: {
@@ -126,9 +140,16 @@ export function logEnvStatus() {
 
   const config = getEnv()
   console.log('\n📦 Environment Variables Status:')
-  console.log('  ✅ Supabase: Configured')
-  console.log(`  ${config.CLAUDE_API_KEY ? '✅' : '⚠️'} Claude API: ${config.CLAUDE_API_KEY ? 'Configured' : 'Not configured'}`)
-  console.log(`  ${config.NEXT_PUBLIC_SENTRY_DSN ? '✅' : '⚠️'} Sentry: ${config.NEXT_PUBLIC_SENTRY_DSN ? 'Configured' : 'Not configured'}`)
-  console.log(`  ${envHelpers.toss.isConfigured ? '✅' : '⚠️'} Toss Payments: ${envHelpers.toss.isConfigured ? 'Configured' : 'Not configured'}`)
+  console.log('  ✅ Database: Configured')
+  console.log('  ✅ Auth.js: Configured')
+  console.log(
+    `  ${config.CLAUDE_API_KEY ? '✅' : '⚠️'} Claude API: ${config.CLAUDE_API_KEY ? 'Configured' : 'Not configured'}`
+  )
+  console.log(
+    `  ${config.NEXT_PUBLIC_SENTRY_DSN ? '✅' : '⚠️'} Sentry: ${config.NEXT_PUBLIC_SENTRY_DSN ? 'Configured' : 'Not configured'}`
+  )
+  console.log(
+    `  ${envHelpers.toss.isConfigured ? '✅' : '⚠️'} Toss Payments: ${envHelpers.toss.isConfigured ? 'Configured' : 'Not configured'}`
+  )
   console.log('')
 }

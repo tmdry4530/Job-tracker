@@ -2,7 +2,9 @@
  * 구독 관련 쿼리
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
+import { and, desc, eq } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { paymentHistory, subscriptions } from '@/lib/db/schema'
 import type {
   Subscription,
   SubscriptionInsert,
@@ -20,144 +22,190 @@ type QueryResult<T> = {
  * 사용자의 활성 구독 조회
  */
 export async function fetchSubscription(
-  supabase: SupabaseClient,
   userId: string
 ): Promise<QueryResult<Subscription>> {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .select('*')
-    .eq('user_id', userId)
-    .single()
+  try {
+    const [row] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.user_id, userId))
+      .limit(1)
 
-  return { data, error }
+    return { data: (row as Subscription) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('구독 조회 실패'),
+    }
+  }
 }
 
 /**
  * 구독 생성
  */
 export async function createSubscription(
-  supabase: SupabaseClient,
   subscription: SubscriptionInsert
 ): Promise<QueryResult<Subscription>> {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .insert(subscription)
-    .select()
-    .single()
+  try {
+    const [row] = await db
+      .insert(subscriptions)
+      .values(subscription)
+      .returning()
 
-  return { data, error }
+    return { data: (row as Subscription) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('구독 생성 실패'),
+    }
+  }
 }
 
 /**
- * 구독 업데이트
+ * 구독 업데이트 (id + userId 이중 조건 — 방어 심층 격리)
  */
 export async function updateSubscription(
-  supabase: SupabaseClient,
+  userId: string,
   subscriptionId: string,
   updates: SubscriptionUpdate
 ): Promise<QueryResult<Subscription>> {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .update(updates)
-    .eq('id', subscriptionId)
-    .select()
-    .single()
+  try {
+    const [row] = await db
+      .update(subscriptions)
+      .set(updates)
+      .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.user_id, userId)))
+      .returning()
 
-  return { data, error }
+    return { data: (row as Subscription) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('구독 업데이트 실패'),
+    }
+  }
 }
 
 /**
- * 구독 취소
+ * 구독 취소 (id + userId 이중 조건 — 방어 심층 격리)
  */
 export async function cancelSubscription(
-  supabase: SupabaseClient,
+  userId: string,
   subscriptionId: string
 ): Promise<QueryResult<Subscription>> {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .update({
-      status: 'cancelled',
-      cancelled_at: new Date().toISOString(),
-    })
-    .eq('id', subscriptionId)
-    .select()
-    .single()
+  try {
+    const [row] = await db
+      .update(subscriptions)
+      .set({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+      })
+      .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.user_id, userId)))
+      .returning()
 
-  return { data, error }
+    return { data: (row as Subscription) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('구독 취소 실패'),
+    }
+  }
 }
 
 /**
  * 결제 내역 조회
  */
 export async function fetchPaymentHistory(
-  supabase: SupabaseClient,
   userId: string,
   limit = 10
 ): Promise<{ data: PaymentHistory[]; error: Error | null }> {
-  const { data, error } = await supabase
-    .from('payment_history')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
+  try {
+    const rows = await db
+      .select()
+      .from(paymentHistory)
+      .where(eq(paymentHistory.user_id, userId))
+      .orderBy(desc(paymentHistory.created_at))
+      .limit(limit)
 
-  return { data: data || [], error }
+    return { data: rows as PaymentHistory[], error: null }
+  } catch (error) {
+    return {
+      data: [],
+      error: error instanceof Error ? error : new Error('결제 내역 조회 실패'),
+    }
+  }
 }
 
 /**
  * 결제 내역 추가
  */
 export async function createPaymentHistory(
-  supabase: SupabaseClient,
   payment: PaymentHistoryInsert
 ): Promise<QueryResult<PaymentHistory>> {
-  const { data, error } = await supabase
-    .from('payment_history')
-    .insert(payment)
-    .select()
-    .single()
+  try {
+    const [row] = await db
+      .insert(paymentHistory)
+      .values(payment)
+      .returning()
 
-  return { data, error }
+    return { data: (row as PaymentHistory) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('결제 내역 추가 실패'),
+    }
+  }
 }
 
 /**
- * 결제 내역 업데이트
+ * 결제 내역 업데이트 (payment_key + userId 이중 조건 — 방어 심층 격리)
  */
 export async function updatePaymentHistory(
-  supabase: SupabaseClient,
+  userId: string,
   paymentKey: string,
   updates: Partial<PaymentHistory>
 ): Promise<QueryResult<PaymentHistory>> {
-  const { data, error } = await supabase
-    .from('payment_history')
-    .update(updates)
-    .eq('payment_key', paymentKey)
-    .select()
-    .single()
+  try {
+    const [row] = await db
+      .update(paymentHistory)
+      .set(updates)
+      .where(and(eq(paymentHistory.payment_key, paymentKey), eq(paymentHistory.user_id, userId)))
+      .returning()
 
-  return { data, error }
+    return { data: (row as PaymentHistory) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('결제 내역 업데이트 실패'),
+    }
+  }
 }
 
 /**
- * 구독 갱신 (다음 결제 주기로)
+ * 구독 갱신 (다음 결제 주기로) (id + userId 이중 조건 — 방어 심층 격리)
  */
 export async function renewSubscription(
-  supabase: SupabaseClient,
+  userId: string,
   subscriptionId: string
 ): Promise<QueryResult<Subscription>> {
-  const now = new Date()
-  const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+  try {
+    const now = new Date()
+    const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .update({
-      current_period_start: now.toISOString(),
-      current_period_end: nextMonth.toISOString(),
-      status: 'active',
-    })
-    .eq('id', subscriptionId)
-    .select()
-    .single()
+    const [row] = await db
+      .update(subscriptions)
+      .set({
+        current_period_start: now.toISOString(),
+        current_period_end: nextMonth.toISOString(),
+        status: 'active',
+      })
+      .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.user_id, userId)))
+      .returning()
 
-  return { data, error }
+    return { data: (row as Subscription) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('구독 갱신 실패'),
+    }
+  }
 }

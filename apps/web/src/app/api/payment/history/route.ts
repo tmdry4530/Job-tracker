@@ -3,20 +3,16 @@
  * GET /api/payment/history
  */
 
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getUserIdFromRequest } from '@/lib/auth/get-user'
 import { fetchPaymentHistory } from '@/lib/queries/subscription'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
     // 인증 확인
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const userId = await getUserIdFromRequest(request)
 
-    if (!user) {
+    if (!userId) {
       return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
     }
 
@@ -24,7 +20,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '10', 10)
 
-    const result = await fetchPaymentHistory(supabase, user.id, limit)
+    const result = await fetchPaymentHistory(userId, limit)
 
     if (result.error) {
       return NextResponse.json(

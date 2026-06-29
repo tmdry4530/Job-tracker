@@ -3,11 +3,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Supabase 클라이언트 모킹
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn(),
-}))
-
 describe('applications queries', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -54,15 +49,16 @@ describe('applications queries', () => {
     })
 
     it('유효한 상태 필터만 허용해야 한다', () => {
-      const validStatuses = ['applied', 'document_passed', 'interview', 'accepted', 'rejected']
-      const invalidStatuses = ['pending', 'invalid', '', null]
+      // 북마크 상태: saved(저장됨), applied(지원함), closed(마감됨)
+      const validStatuses = ['saved', 'applied', 'closed']
+      const invalidStatuses = ['pending', 'invalid', '', null, 'document_passed', 'interview']
 
       validStatuses.forEach((status) => {
-        expect(['applied', 'document_passed', 'interview', 'accepted', 'rejected']).toContain(status)
+        expect(['saved', 'applied', 'closed']).toContain(status)
       })
 
       invalidStatuses.forEach((status) => {
-        expect(['applied', 'document_passed', 'interview', 'accepted', 'rejected']).not.toContain(status)
+        expect(['saved', 'applied', 'closed']).not.toContain(status)
       })
     })
   })

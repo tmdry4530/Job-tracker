@@ -3,14 +3,10 @@
  */
 
 type ExtensionEnvConfig = {
-  PLASMO_PUBLIC_SUPABASE_URL: string
-  PLASMO_PUBLIC_SUPABASE_ANON_KEY: string
   PLASMO_PUBLIC_DASHBOARD_URL: string
 }
 
 const requiredKeys: (keyof ExtensionEnvConfig)[] = [
-  'PLASMO_PUBLIC_SUPABASE_URL',
-  'PLASMO_PUBLIC_SUPABASE_ANON_KEY',
   'PLASMO_PUBLIC_DASHBOARD_URL',
 ]
 
@@ -30,8 +26,6 @@ function validateEnv(): ExtensionEnvConfig {
   }
 
   return {
-    PLASMO_PUBLIC_SUPABASE_URL: process.env.PLASMO_PUBLIC_SUPABASE_URL || '',
-    PLASMO_PUBLIC_SUPABASE_ANON_KEY: process.env.PLASMO_PUBLIC_SUPABASE_ANON_KEY || '',
     PLASMO_PUBLIC_DASHBOARD_URL: process.env.PLASMO_PUBLIC_DASHBOARD_URL || 'http://localhost:3000',
   }
 }
@@ -48,18 +42,6 @@ export function getExtensionEnv(): ExtensionEnvConfig {
 
 // 헬퍼 함수들
 export const extensionEnv = {
-  supabase: {
-    get url() {
-      return getExtensionEnv().PLASMO_PUBLIC_SUPABASE_URL
-    },
-    get anonKey() {
-      return getExtensionEnv().PLASMO_PUBLIC_SUPABASE_ANON_KEY
-    },
-    get isConfigured() {
-      const e = getExtensionEnv()
-      return !!(e.PLASMO_PUBLIC_SUPABASE_URL && e.PLASMO_PUBLIC_SUPABASE_ANON_KEY)
-    },
-  },
   dashboard: {
     get url() {
       return getExtensionEnv().PLASMO_PUBLIC_DASHBOARD_URL
