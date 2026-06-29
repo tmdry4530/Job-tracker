@@ -42,6 +42,8 @@ try {
 
   console.log('✅ 마이그레이션 완료')
   await pool.end()
+  // 남은 핸들로 프로세스가 매달려 다음 명령(next start)이 실행되지 않는 것을 방지
+  process.exit(0)
 } catch (err) {
   console.error('❌ 마이그레이션 실패:', err)
   await pool.end()
