@@ -1,4 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import { eq, sql } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { applications, userPlans } from '@/lib/db/schema'
 import type { PlanUsage, UserPlan } from '@job-tracker/shared'
 import { PLAN_LIMITS } from '@job-tracker/shared'
 
@@ -6,52 +8,55 @@ import { PLAN_LIMITS } from '@job-tracker/shared'
  * 사용자 플랜 조회
  */
 export async function fetchUserPlan(
-  supabase: SupabaseClient,
   userId: string
 ): Promise<{ data: UserPlan | null; error: Error | null }> {
-  const { data, error } = await supabase
-    .from('user_plans')
-    .select('*')
-    .eq('user_id', userId)
-    .single()
+  try {
+    const [row] = await db
+      .select()
+      .from(userPlans)
+      .where(eq(userPlans.user_id, userId))
+      .limit(1)
 
-  if (error && error.code !== 'PGRST116') {
-    // PGRST116 = no rows returned (신규 사용자)
-    return { data: null, error: new Error(error.message) }
+    // 행이 없으면 신규 사용자 → null 반환 (에러 아님)
+    return { data: (row as UserPlan) ?? null, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('플랜 조회 실패'),
+    }
   }
-
-  return { data, error: null }
 }
 
 /**
  * 사용자 지원 내역 개수 조회
  */
 export async function fetchApplicationCount(
-  supabase: SupabaseClient,
   userId: string
 ): Promise<{ count: number; error: Error | null }> {
-  const { count, error } = await supabase
-    .from('applications')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
+  try {
+    const [row] = await db
+      .select({ value: sql<number>`count(*)::int` })
+      .from(applications)
+      .where(eq(applications.user_id, userId))
 
-  if (error) {
-    return { count: 0, error: new Error(error.message) }
+    return { count: row?.value ?? 0, error: null }
+  } catch (error) {
+    return {
+      count: 0,
+      error: error instanceof Error ? error : new Error('지원 내역 개수 조회 실패'),
+    }
   }
-
-  return { count: count ?? 0, error: null }
 }
 
 /**
  * 플랜 사용량 조회 (플랜 + 현재 사용량)
  */
 export async function fetchPlanUsage(
-  supabase: SupabaseClient,
   userId: string
 ): Promise<{ data: PlanUsage | null; error: Error | null }> {
   const [planResult, countResult] = await Promise.all([
-    fetchUserPlan(supabase, userId),
-    fetchApplicationCount(supabase, userId),
+    fetchUserPlan(userId),
+    fetchApplicationCount(userId),
   ])
 
   if (planResult.error) {

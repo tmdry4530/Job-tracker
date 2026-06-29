@@ -1,15 +1,14 @@
-import { createExtensionSupabaseClient, setStoredSession, getStoredSession, isSessionExpired } from '~lib/supabase'
+import { getStoredAuth, setStoredAuth, apiFetch } from '~lib/api-client'
 import type {
-  StoredSession,
-  SessionMessage,
+  StoredAuth,
+  AuthMessage,
   ParseMessage,
   ParsedApplication,
   ExtensionMessage,
   JdCollectMessage,
   SyncResult,
 } from '~lib/types'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { syncApplicationsToSupabase } from '~lib/sync-service'
+import { syncBookmarks } from '~lib/sync-service'
 import { callOcrApi } from '~lib/ocr-api'
 import { BADGE_COLORS } from '~lib/constants'
 
@@ -17,27 +16,14 @@ export {}
 
 /**
  * Background Service Worker
- * - Content Script에서 세션 업데이트 수신
- * - chrome.storage.local에 세션 저장
- * - Supabase 클라이언트 관리
+ * - Content Script에서 인증(Bearer 토큰) 업데이트 수신
+ * - chrome.storage.local에 인증 저장
+ * - 웹 API 호출로 북마크/JD 동기화
  * - 파싱 결과 수신 및 저장
  */
 
-let supabase: SupabaseClient | null = null
+let auth: StoredAuth | null = null
 let pendingApplications: ParsedApplication[] = []
-
-/**
- * 세션으로 Supabase 클라이언트 초기화
- */
-function initSupabaseWithSession(session: StoredSession | null) {
-  if (session && !isSessionExpired(session)) {
-    supabase = createExtensionSupabaseClient(session)
-    console.log('[Extension BG] Supabase client initialized with session')
-  } else {
-    supabase = null
-    console.log('[Extension BG] Supabase client cleared')
-  }
-}
 
 /**
  * Content Script 및 Popup에서 메시지 수신
@@ -46,8 +32,8 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
   console.log('[Extension BG] Message received:', message.type)
 
   switch (message.type) {
-    case 'SESSION_UPDATE':
-      handleSessionUpdate((message as SessionMessage).session)
+    case 'AUTH_UPDATE':
+      handleAuthUpdate((message as AuthMessage).auth)
       sendResponse({ success: true })
       break
 
@@ -78,15 +64,15 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
 })
 
 /**
- * 세션 업데이트 처리
+ * 인증 업데이트 처리
  */
-async function handleSessionUpdate(session: StoredSession | null) {
+async function handleAuthUpdate(newAuth: StoredAuth | null) {
   try {
-    await setStoredSession(session)
-    initSupabaseWithSession(session)
-    console.log('[Extension BG] Session updated:', session ? 'logged in' : 'logged out')
+    await setStoredAuth(newAuth)
+    auth = newAuth
+    console.log('[Extension BG] Auth updated:', newAuth ? 'logged in' : 'logged out')
   } catch (error) {
-    console.error('[Extension BG] Failed to update session:', error)
+    console.error('[Extension BG] Failed to update auth:', error)
   }
 }
 
@@ -94,9 +80,8 @@ async function handleSessionUpdate(session: StoredSession | null) {
  * chrome.storage 변경 감지
  */
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.session) {
-    const newSession = changes.session.newValue as StoredSession | undefined
-    initSupabaseWithSession(newSession || null)
+  if (areaName === 'local' && changes.auth) {
+    auth = (changes.auth.newValue as StoredAuth | undefined) || null
   }
 })
 
@@ -105,33 +90,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
  */
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Job Application Tracker Extension installed')
-  initializeSession()
+  initializeAuth()
 })
 
 /**
- * Service Worker 시작 시 초기 세션 로드
+ * Service Worker 시작 시 초기 인증 로드
  */
-async function initializeSession() {
-  const session = await getStoredSession()
-  if (session) {
-    if (isSessionExpired(session)) {
-      console.log('[Extension BG] Stored session expired, clearing...')
-      await setStoredSession(null)
-    } else {
-      initSupabaseWithSession(session)
-    }
-  }
+async function initializeAuth() {
+  auth = await getStoredAuth()
 }
 
-// Service Worker 시작 시 세션 초기화
-initializeSession()
-
-/**
- * Supabase 클라이언트 내보내기
- */
-export function getSupabaseClient(): SupabaseClient | null {
-  return supabase
-}
+// Service Worker 시작 시 인증 초기화
+initializeAuth()
 
 /**
  * 파싱 결과 처리
@@ -185,7 +155,7 @@ export async function clearPendingApplications(): Promise<void> {
 async function handleSyncRequest(): Promise<SyncResult> {
   console.log('[Extension BG] Sync request received')
 
-  if (!supabase) {
+  if (!auth) {
     return { error: '로그인이 필요합니다', timestamp: Date.now() }
   }
 
@@ -194,7 +164,7 @@ async function handleSyncRequest(): Promise<SyncResult> {
   }
 
   try {
-    const result = await syncApplicationsToSupabase(supabase, pendingApplications)
+    const result = await syncBookmarks(auth, pendingApplications)
 
     if (result.syncedCount > 0) {
       await clearPendingApplications()
@@ -217,59 +187,50 @@ async function handleJdCollected(message: JdCollectMessage): Promise<{ success: 
   const { payload } = message
   console.log(`[Extension BG] JD collected for ${payload.companyName} - ${payload.position}`)
 
-  if (!supabase) {
+  if (!auth) {
     return { success: false, error: '로그인이 필요합니다' }
   }
 
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return { success: false, error: '사용자 인증 실패' }
-    }
-
-    const { data: sessionData } = await supabase.auth.getSession()
-    const accessToken = sessionData?.session?.access_token
-
     // 이미지 기반 JD인 경우 OCR 시도
     let jdContent = payload.jdContent
-    if (payload.isImageBased && payload.imageUrls && payload.imageUrls.length > 0 && accessToken) {
+    if (payload.isImageBased && payload.imageUrls && payload.imageUrls.length > 0) {
       console.log(`[Extension BG] Attempting OCR for ${payload.imageUrls.length} images`)
-      const ocrText = await callOcrApi(payload.imageUrls, accessToken)
+      const ocrText = await callOcrApi(payload.imageUrls, auth.token)
       if (ocrText) {
         jdContent = ocrText
       }
     }
 
-    // 기존 레코드 찾기
-    const { data: existing } = await supabase
-      .from('applications')
-      .select('id, jd_content')
-      .eq('user_id', user.id)
-      .eq('platform', payload.platform)
-      .eq('company_name', payload.companyName)
-      .eq('position', payload.position)
-      .maybeSingle()
+    const response = await apiFetch(
+      '/api/applications/jd',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: payload.platform,
+          companyName: payload.companyName,
+          position: payload.position,
+          sourceUrl: payload.sourceUrl,
+          jdContent,
+        }),
+      },
+      auth.token
+    )
 
-    if (existing) {
-      const { error } = await supabase
-        .from('applications')
-        .update({
-          jd_content: jdContent,
-          source_url: payload.sourceUrl,
-        })
-        .eq('id', existing.id)
-
-      if (error) {
-        console.error('[Extension BG] JD update error:', error)
-        return { success: false, error: error.message }
-      }
-
-      console.log(`[Extension BG] JD updated for existing record: ${existing.id}`)
-      return { success: true }
-    } else {
-      console.log(`[Extension BG] No application record found for: ${payload.companyName} - ${payload.position}`)
-      return { success: false, error: '지원 기록이 없습니다' }
+    if (!response.ok) {
+      const errorBody = await response.text()
+      console.error('[Extension BG] JD update error:', response.status, errorBody)
+      return { success: false, error: 'JD 업데이트 실패' }
     }
+
+    const data = (await response.json()) as { success: boolean; error?: string }
+    if (data.success) {
+      console.log(`[Extension BG] JD updated for ${payload.companyName} - ${payload.position}`)
+    } else {
+      console.log(`[Extension BG] JD update skipped: ${data.error}`)
+    }
+    return data
   } catch (error) {
     console.error('[Extension BG] JD collection error:', error)
     return { success: false, error: error instanceof Error ? error.message : '알 수 없는 오류' }

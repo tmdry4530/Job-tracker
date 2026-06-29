@@ -1,96 +1,53 @@
 'use client'
 
 import { useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
 
 /**
- * Extension 세션 저장 형식
+ * 익스텐션 인증 저장 형식
  */
-interface StoredSession {
-  access_token: string
-  refresh_token: string
-  expires_at: number
-  user: {
-    id: string
-    email: string
-  }
+interface StoredAuth {
+  token: string
+  userId: string
 }
 
-const SESSION_STORAGE_KEY = 'job-tracker-extension-session'
+const EXTENSION_TOKEN_KEY = 'job-tracker-extension-token'
 
 /**
  * SessionSync 컴포넌트
- * - Supabase onAuthStateChange를 구독하여 세션 변경 감지
- * - localStorage에 세션 정보 저장
+ * - 마운트 시 /api/auth/extension-token 호출로 익스텐션용 Bearer 토큰 발급
+ * - localStorage에 토큰 저장
  * - 커스텀 이벤트 dispatch (Content Script에서 감지)
  */
 export function SessionSync() {
   useEffect(() => {
-    const supabase = createClient()
-
-    /**
-     * 세션을 localStorage에 저장하고 커스텀 이벤트 발생
-     */
-    const syncSession = (session: StoredSession | null) => {
-      if (session) {
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session))
+    const syncAuth = (auth: StoredAuth | null) => {
+      if (auth) {
+        localStorage.setItem(EXTENSION_TOKEN_KEY, JSON.stringify(auth))
       } else {
-        localStorage.removeItem(SESSION_STORAGE_KEY)
+        localStorage.removeItem(EXTENSION_TOKEN_KEY)
       }
 
       // Content Script에서 감지할 수 있도록 커스텀 이벤트 발생
       window.dispatchEvent(
-        new CustomEvent('job-tracker-session-change', { detail: session })
+        new CustomEvent('job-tracker-session-change', { detail: auth })
       )
     }
 
-    // onAuthStateChange 구독
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[SessionSync] Auth state changed:', event)
-
-        if (session) {
-          const storedSession: StoredSession = {
-            access_token: session.access_token,
-            refresh_token: session.refresh_token,
-            expires_at: session.expires_at ?? 0,
-            user: {
-              id: session.user.id,
-              email: session.user.email ?? '',
-            },
-          }
-          syncSession(storedSession)
+    const fetchExtensionToken = async () => {
+      try {
+        const response = await fetch('/api/auth/extension-token')
+        if (response.ok) {
+          const auth = (await response.json()) as StoredAuth
+          syncAuth({ token: auth.token, userId: auth.userId })
         } else {
-          syncSession(null)
+          syncAuth(null)
         }
-      }
-    )
-
-    // 초기 세션 확인 및 동기화
-    const initializeSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        const storedSession: StoredSession = {
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-          expires_at: session.expires_at ?? 0,
-          user: {
-            id: session.user.id,
-            email: session.user.email ?? '',
-          },
-        }
-        syncSession(storedSession)
-      } else {
-        syncSession(null)
+      } catch {
+        syncAuth(null)
       }
     }
 
-    initializeSession()
-
-    // 클린업
-    return () => {
-      subscription.unsubscribe()
-    }
+    fetchExtensionToken()
   }, [])
 
   // UI 렌더링 없음

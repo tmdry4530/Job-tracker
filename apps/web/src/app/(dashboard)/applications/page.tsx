@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { createClient } from '@/lib/supabase/server'
+import { requireUserId } from '@/lib/auth/get-user'
 import { fetchApplications } from '@/lib/queries/applications'
 import { fetchPlanUsage } from '@/lib/queries/plan'
 import { ApplicationList } from '@/components/features/applications/application-list'
@@ -50,18 +50,17 @@ function FiltersSkeleton() {
 
 export default async function ApplicationsPage({ searchParams }: ApplicationsPageProps) {
   const params = await searchParams
-  const supabase = await createClient()
 
-  // 사용자 ID 가져오기
-  const { data: { user } } = await supabase.auth.getUser()
+  // 사용자 ID 가져오기 (로그인 필수)
+  const userId = await requireUserId()
 
   const [applicationsResult, planResult] = await Promise.all([
-    fetchApplications(supabase, {
+    fetchApplications(userId, {
       search: params.q,
       platform: params.platform,
       status: params.status,
     }),
-    user ? fetchPlanUsage(supabase, user.id) : Promise.resolve({ data: null, error: null }),
+    fetchPlanUsage(userId),
   ])
 
   if (applicationsResult.error) {

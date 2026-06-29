@@ -1,25 +1,10 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 
-interface HomePageProps {
-  searchParams: Promise<{ code?: string }>
-}
-
-export default async function HomePage({ searchParams }: HomePageProps) {
-  const params = await searchParams
-
-  // OAuth 코드가 있으면 세션 교환 후 리다이렉트
-  if (params.code) {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(params.code)
-
-    if (error) {
-      console.error('[Home] OAuth code exchange error:', error)
-      redirect(`/login?error=${encodeURIComponent(error.message)}`)
-    }
-
-    redirect('/applications')
-  }
-
+/**
+ * 루트 페이지 — 대시보드로 리다이렉트.
+ * 인증 여부는 미들웨어가 처리 (비인증 시 /login).
+ * OAuth 콜백은 Auth.js가 /api/auth/callback/[provider]에서 처리.
+ */
+export default function HomePage() {
   redirect('/applications')
 }

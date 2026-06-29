@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import './style.css'
-import type { StoredSession, ParsedApplication } from '~lib/types'
-import { isSessionExpired } from '~lib/supabase'
+import type { StoredAuth, ParsedApplication } from '~lib/types'
 
 const DASHBOARD_URL = process.env.PLASMO_PUBLIC_DASHBOARD_URL || 'http://localhost:3000'
 
@@ -12,7 +11,7 @@ interface SyncResult {
 }
 
 function IndexPopup() {
-  const [session, setSession] = useState<StoredSession | null>(null)
+  const [auth, setAuth] = useState<StoredAuth | null>(null)
   const [loading, setLoading] = useState(true)
   const [pendingApplications, setPendingApplications] = useState<ParsedApplication[]>([])
   const [syncing, setSyncing] = useState(false)
@@ -21,13 +20,9 @@ function IndexPopup() {
 
   useEffect(() => {
     // 초기 데이터 로드
-    chrome.storage.local.get(['session', 'pendingApplications', 'lastSyncTime'], (result) => {
-      const storedSession = result.session as StoredSession | undefined
-      if (storedSession && !isSessionExpired(storedSession)) {
-        setSession(storedSession)
-      } else {
-        setSession(null)
-      }
+    chrome.storage.local.get(['auth', 'pendingApplications', 'lastSyncTime'], (result) => {
+      const storedAuth = result.auth as StoredAuth | undefined
+      setAuth(storedAuth || null)
 
       if (result.pendingApplications) {
         setPendingApplications(result.pendingApplications)
@@ -46,13 +41,9 @@ function IndexPopup() {
       areaName: string
     ) => {
       if (areaName === 'local') {
-        if (changes.session) {
-          const newSession = changes.session.newValue as StoredSession | undefined
-          if (newSession && !isSessionExpired(newSession)) {
-            setSession(newSession)
-          } else {
-            setSession(null)
-          }
+        if (changes.auth) {
+          const newAuth = changes.auth.newValue as StoredAuth | undefined
+          setAuth(newAuth || null)
         }
         if (changes.pendingApplications) {
           setPendingApplications(changes.pendingApplications.newValue || [])
@@ -76,7 +67,7 @@ function IndexPopup() {
   }
 
   const handleSync = async () => {
-    if (!session || pendingApplications.length === 0) return
+    if (!auth || pendingApplications.length === 0) return
 
     setSyncing(true)
     setSyncResult(null)
@@ -130,7 +121,7 @@ function IndexPopup() {
 
       {/* 로그인 상태 */}
       <div className="mt-4 space-y-2">
-        {session ? (
+        {auth ? (
           <div className="flex items-center text-sm text-green-600">
             <svg
               className="w-4 h-4 mr-1.5"
@@ -143,7 +134,7 @@ function IndexPopup() {
                 clipRule="evenodd"
               />
             </svg>
-            로그인됨: {session.user.email}
+            로그인됨
           </div>
         ) : (
           <div className="flex items-center text-sm text-gray-500">
@@ -206,7 +197,7 @@ function IndexPopup() {
       {/* 버튼 영역 */}
       <div className="mt-4 space-y-2">
         {/* 동기화 버튼 */}
-        {session && pendingApplications.length > 0 && (
+        {auth && pendingApplications.length > 0 && (
           <button
             onClick={handleSync}
             disabled={syncing}
@@ -221,7 +212,7 @@ function IndexPopup() {
         )}
 
         {/* 대시보드/로그인 버튼 */}
-        {session ? (
+        {auth ? (
           <button
             onClick={openDashboard}
             className="w-full py-2 px-4 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
@@ -246,7 +237,7 @@ function IndexPopup() {
       )}
 
       {/* 사용 안내 */}
-      {session && pendingApplications.length === 0 && !lastSyncTime && (
+      {auth && pendingApplications.length === 0 && !lastSyncTime && (
         <p className="mt-4 text-xs text-gray-400 text-center">
           원티드 또는 사람인 지원현황 페이지를 방문하면<br />
           자동으로 지원 내역을 수집합니다.

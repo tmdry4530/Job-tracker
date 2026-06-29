@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
+import { and, asc, eq } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { applications, interviewQuestions } from '@/lib/db/schema'
+import { getUserIdFromRequest } from '@/lib/auth/get-user'
 import {
   sendMessage,
   INTERVIEW_QUESTIONS_SYSTEM_PROMPT,
@@ -49,11 +52,9 @@ function parseQuestionsResponse(response: string): GeneratedQuestion[] {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
     // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
 
     // Rate limiting 체크
     const rateLimitResult = checkRateLimit(
-      `questions:${user.id}`,
+      `questions:${userId}`,
       RATE_LIMITS.AI_QUESTIONS
     )
     if (!rateLimitResult.success) {
@@ -86,14 +87,18 @@ export async function POST(request: NextRequest) {
     const { applicationId } = parsed.data
 
     // 기존 질문 확인 (캐시)
-    const { data: existingQuestions } = await supabase
-      .from('interview_questions')
-      .select('*')
-      .eq('application_id', applicationId)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
+    const existingQuestions = await db
+      .select()
+      .from(interviewQuestions)
+      .where(
+        and(
+          eq(interviewQuestions.application_id, applicationId),
+          eq(interviewQuestions.user_id, userId)
+        )
+      )
+      .orderBy(asc(interviewQuestions.created_at))
 
-    if (existingQuestions && existingQuestions.length > 0) {
+    if (existingQuestions.length > 0) {
       return NextResponse.json({
         success: true,
         data: existingQuestions,
@@ -102,14 +107,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Application 조회
-    const { data: application, error: appError } = await supabase
-      .from('applications')
-      .select('*')
-      .eq('id', applicationId)
-      .eq('user_id', user.id)
-      .single()
+    const [application] = await db
+      .select()
+      .from(applications)
+      .where(
+        and(eq(applications.id, applicationId), eq(applications.user_id, userId))
+      )
+      .limit(1)
 
-    if (appError || !application) {
+    if (!application) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: '지원 내역을 찾을 수 없습니다' } },
         { status: 404 }
@@ -153,29 +159,29 @@ export async function POST(request: NextRequest) {
     // 질문 저장
     const questionsToInsert = questions.map((q) => ({
       application_id: applicationId,
-      user_id: user.id,
+      user_id: userId,
       question: q.question,
       category: q.category,
     }))
 
-    const { data: savedQuestions, error: saveError } = await supabase
-      .from('interview_questions')
-      .insert(questionsToInsert)
-      .select()
+    try {
+      const savedQuestions = await db
+        .insert(interviewQuestions)
+        .values(questionsToInsert)
+        .returning()
 
-    if (saveError) {
+      return NextResponse.json({
+        success: true,
+        data: savedQuestions,
+        cached: false,
+      })
+    } catch (saveError) {
       console.error('Save error:', saveError)
       return NextResponse.json(
         { success: false, error: { code: 'SAVE_ERROR', message: '질문 저장에 실패했습니다. 다시 시도해주세요.' } },
         { status: 500 }
       )
     }
-
-    return NextResponse.json({
-      success: true,
-      data: savedQuestions,
-      cached: false,
-    })
 
   } catch (error) {
     console.error('Questions API error:', error)
@@ -189,11 +195,9 @@ export async function POST(request: NextRequest) {
 // GET: 기존 질문 조회
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
     // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
@@ -211,23 +215,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { data: questions, error } = await supabase
-      .from('interview_questions')
-      .select('*')
-      .eq('application_id', parsed.data)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
-
-    if (error) {
-      return NextResponse.json(
-        { success: false, error: { code: 'INTERNAL_ERROR', message: error.message } },
-        { status: 500 }
+    const questions = await db
+      .select()
+      .from(interviewQuestions)
+      .where(
+        and(
+          eq(interviewQuestions.application_id, parsed.data),
+          eq(interviewQuestions.user_id, userId)
+        )
       )
-    }
+      .orderBy(asc(interviewQuestions.created_at))
 
     return NextResponse.json({
       success: true,
-      data: questions || [],
+      data: questions,
     })
 
   } catch (error) {
@@ -242,11 +243,9 @@ export async function GET(request: NextRequest) {
 // DELETE: 질문 삭제 (재생성용)
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
     // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
@@ -264,18 +263,14 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const { error } = await supabase
-      .from('interview_questions')
-      .delete()
-      .eq('application_id', parsed.data)
-      .eq('user_id', user.id)
-
-    if (error) {
-      return NextResponse.json(
-        { success: false, error: { code: 'INTERNAL_ERROR', message: error.message } },
-        { status: 500 }
+    await db
+      .delete(interviewQuestions)
+      .where(
+        and(
+          eq(interviewQuestions.application_id, parsed.data),
+          eq(interviewQuestions.user_id, userId)
+        )
       )
-    }
 
     return NextResponse.json({
       success: true,

@@ -1,0 +1,14 @@
+**/node_modules
+**/.next
+**/.plasmo
+**/build
+**/dist
+.git
+**/.env
+**/.env.local
+**/.env.development
+**/.env.production
+.omc
+_bmad
+docs
+**/*.log

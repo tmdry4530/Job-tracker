@@ -1,16 +1,13 @@
 /**
- * Supabase 동기화 서비스
- * 북마크 공고를 Supabase에 저장/업데이트
+ * 동기화 서비스
+ * 북마크 공고를 웹 API(/api/applications/sync)로 전송하여 저장/업데이트
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ParsedBookmark } from './types'
-
-// 하위 호환성을 위한 별칭
-type ParsedApplication = ParsedBookmark
+import type { ParsedBookmark, StoredAuth } from './types'
 import { SYNC } from './constants'
 import { fetchWantedJd, fetchSaraminJd } from './jd-fetcher'
 import { callOcrApi } from './ocr-api'
+import { apiFetch } from './api-client'
 
 export interface SyncResult {
   syncedCount: number
@@ -19,13 +16,24 @@ export interface SyncResult {
   error?: string
 }
 
+/** 서버로 전송할 북마크 레코드 */
+interface SyncBookmarkRecord {
+  platform: ParsedBookmark['platform']
+  companyName: string
+  position: string
+  sourceUrl: string
+  savedAt: string | null
+  deadline: string | null
+  jdContent: string | null
+}
+
 /**
- * 중복 제거된 애플리케이션 목록 반환
+ * 중복 제거된 북마크 목록 반환
  */
-function deduplicateApplications(applications: ParsedApplication[]): ParsedApplication[] {
+function deduplicateBookmarks(bookmarks: ParsedBookmark[]): ParsedBookmark[] {
   const seen = new Set<string>()
-  return applications.filter(app => {
-    const key = app.sourceUrl || `${app.platform}-${app.companyName}-${app.position}`
+  return bookmarks.filter((b) => {
+    const key = b.sourceUrl || `${b.platform}-${b.companyName}-${b.position}`
     if (seen.has(key)) {
       return false
     }
@@ -35,170 +43,123 @@ function deduplicateApplications(applications: ParsedApplication[]): ParsedAppli
 }
 
 /**
- * 기존 레코드 찾기
- */
-async function findExistingApplication(
-  supabase: SupabaseClient,
-  userId: string,
-  app: ParsedApplication
-): Promise<{ id: string; jd_content: string | null; position?: string } | null> {
-  // source_url로 검색
-  if (app.sourceUrl) {
-    const { data } = await supabase
-      .from('applications')
-      .select('id, jd_content')
-      .eq('user_id', userId)
-      .eq('source_url', app.sourceUrl)
-      .maybeSingle()
-    if (data) return data
-  }
-
-  // company_name으로 검색
-  const { data } = await supabase
-    .from('applications')
-    .select('id, jd_content, position')
-    .eq('user_id', userId)
-    .eq('platform', app.platform)
-    .eq('company_name', app.companyName)
-    .maybeSingle()
-
-  return data
-}
-
-/**
  * JD 콘텐츠 수집
  */
 async function fetchJdContent(
-  app: ParsedApplication,
-  accessToken?: string
-): Promise<{ content: string | null; isImageBased: boolean }> {
-  if (!app.sourceUrl) {
-    return { content: null, isImageBased: false }
+  bookmark: ParsedBookmark,
+  token: string
+): Promise<string | null> {
+  if (!bookmark.sourceUrl) {
+    return null
   }
 
-  if (app.platform === 'wanted') {
-    const content = await fetchWantedJd(app.sourceUrl)
-    return { content, isImageBased: false }
+  if (bookmark.platform === 'wanted') {
+    return fetchWantedJd(bookmark.sourceUrl)
   }
 
-  if (app.platform === 'saramin') {
-    const result = await fetchSaraminJd(app.sourceUrl)
+  if (bookmark.platform === 'saramin') {
+    const result = await fetchSaraminJd(bookmark.sourceUrl)
     if (!result) {
-      return { content: null, isImageBased: false }
+      return null
     }
 
     // 이미지 기반 공고면 OCR 시도
-    if (result.isImage && result.imageUrls.length > 0 && accessToken) {
-      const ocrText = await callOcrApi(result.imageUrls, accessToken)
+    if (result.isImage && result.imageUrls.length > 0) {
+      const ocrText = await callOcrApi(result.imageUrls, token)
       if (ocrText) {
-        return { content: ocrText, isImageBased: true }
+        return ocrText
       }
     }
 
-    return { content: result.content, isImageBased: result.isImage }
+    return result.content
   }
 
-  return { content: null, isImageBased: false }
+  return null
 }
 
 /**
- * 단일 애플리케이션 동기화
+ * 북마크 공고를 웹 API로 동기화
  */
-async function syncSingleApplication(
-  supabase: SupabaseClient,
-  userId: string,
-  app: ParsedApplication,
-  accessToken?: string
-): Promise<boolean> {
-  const existing = await findExistingApplication(supabase, userId, app)
-
-  if (existing) {
-    // 기존 레코드 업데이트
-    let jdContent = existing.jd_content
-
-    if (!jdContent && app.sourceUrl) {
-      const jdResult = await fetchJdContent(app, accessToken)
-      jdContent = jdResult.content
-    }
-
-    const { error } = await supabase
-      .from('applications')
-      .update({
-        position: app.position,
-        source_url: app.sourceUrl,
-        saved_at: app.savedAt,
-        ...(app.deadline ? { deadline: app.deadline } : {}),
-        ...(jdContent && !existing.jd_content ? { jd_content: jdContent } : {}),
-      })
-      .eq('id', existing.id)
-
-    return !error
-  } else {
-    // 새로 삽입
-    const jdResult = await fetchJdContent(app, accessToken)
-
-    const { error } = await supabase
-      .from('applications')
-      .insert({
-        user_id: userId,
-        platform: app.platform,
-        company_name: app.companyName,
-        position: app.position,
-        source_url: app.sourceUrl,
-        jd_content: jdResult.content,
-        status: 'saved',
-        saved_at: app.savedAt,
-        ...(app.deadline ? { deadline: app.deadline } : {}),
-      })
-
-    return !error
-  }
-}
-
-/**
- * Supabase에 북마크 공고 동기화
- */
-export async function syncApplicationsToSupabase(
-  supabase: SupabaseClient,
-  applications: ParsedApplication[]
+export async function syncBookmarks(
+  auth: StoredAuth,
+  bookmarks: ParsedBookmark[]
 ): Promise<SyncResult> {
-  // 현재 사용자 정보
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
-  if (userError || !user) {
-    return { syncedCount: 0, skippedCount: 0, timestamp: Date.now(), error: '사용자 인증 실패' }
-  }
-
-  // 세션 토큰 가져오기
-  const { data: sessionData } = await supabase.auth.getSession()
-  const accessToken = sessionData?.session?.access_token
-
   // 중복 제거
-  const uniqueApplications = deduplicateApplications(applications)
-  console.log(`[Sync] Processing ${uniqueApplications.length} applications`)
+  const uniqueBookmarks = deduplicateBookmarks(bookmarks)
+  console.log(`[Sync] Processing ${uniqueBookmarks.length} bookmarks`)
 
-  let syncedCount = 0
-  let skippedCount = 0
+  // 레코드 생성 (필요 시 JD 수집)
+  const records: SyncBookmarkRecord[] = []
 
-  // 배치 처리
-  for (let i = 0; i < uniqueApplications.length; i += SYNC.BATCH_SIZE) {
-    const batch = uniqueApplications.slice(i, i + SYNC.BATCH_SIZE)
+  for (let i = 0; i < uniqueBookmarks.length; i += SYNC.BATCH_SIZE) {
+    const batch = uniqueBookmarks.slice(i, i + SYNC.BATCH_SIZE)
 
-    for (const app of batch) {
-      try {
-        const success = await syncSingleApplication(supabase, user.id, app, accessToken)
-        if (success) {
-          syncedCount++
-        } else {
-          skippedCount++
+    for (const bookmark of batch) {
+      let jdContent: string | null = bookmark.jdContent ?? null
+
+      if (!jdContent && bookmark.sourceUrl) {
+        try {
+          jdContent = await fetchJdContent(bookmark, auth.token)
+        } catch (error) {
+          console.error('[Sync] JD fetch error:', error)
         }
-      } catch (error) {
-        console.error('[Sync] Item error:', error)
-        skippedCount++
       }
+
+      records.push({
+        platform: bookmark.platform,
+        companyName: bookmark.companyName,
+        position: bookmark.position,
+        sourceUrl: bookmark.sourceUrl,
+        savedAt: bookmark.savedAt ?? null,
+        deadline: bookmark.deadline ?? null,
+        jdContent,
+      })
     }
   }
 
-  console.log(`[Sync] Completed: ${syncedCount} synced, ${skippedCount} skipped`)
+  try {
+    const response = await apiFetch(
+      '/api/applications/sync',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookmarks: records }),
+      },
+      auth.token
+    )
 
-  return { syncedCount, skippedCount, timestamp: Date.now() }
+    if (!response.ok) {
+      const errorBody = await response.text()
+      console.error('[Sync] API error:', response.status, errorBody)
+      return {
+        syncedCount: 0,
+        skippedCount: records.length,
+        timestamp: Date.now(),
+        error: '동기화 실패',
+      }
+    }
+
+    const data = (await response.json()) as {
+      syncedCount: number
+      skippedCount: number
+    }
+
+    console.log(
+      `[Sync] Completed: ${data.syncedCount} synced, ${data.skippedCount} skipped`
+    )
+
+    return {
+      syncedCount: data.syncedCount,
+      skippedCount: data.skippedCount,
+      timestamp: Date.now(),
+    }
+  } catch (error) {
+    console.error('[Sync] Request failed:', error)
+    return {
+      syncedCount: 0,
+      skippedCount: records.length,
+      timestamp: Date.now(),
+      error: error instanceof Error ? error.message : '동기화 실패',
+    }
+  }
 }

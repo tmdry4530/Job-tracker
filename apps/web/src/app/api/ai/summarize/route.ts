@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
+import { and, eq } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { applications, jdSummaries } from '@/lib/db/schema'
+import { getUserIdFromRequest } from '@/lib/auth/get-user'
 import {
   sendMessage,
   JD_SUMMARY_SYSTEM_PROMPT,
@@ -17,11 +20,9 @@ const ApplicationIdSchema = z.string().uuid('유효하지 않은 ID입니다')
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
     // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     // Rate limiting 체크
     const rateLimitResult = checkRateLimit(
-      `summarize:${user.id}`,
+      `summarize:${userId}`,
       RATE_LIMITS.AI_SUMMARIZE
     )
     if (!rateLimitResult.success) {
@@ -55,19 +56,26 @@ export async function POST(request: NextRequest) {
 
     // regenerate가 true면 기존 요약 삭제
     if (regenerate) {
-      await supabase
-        .from('jd_summaries')
-        .delete()
-        .eq('application_id', applicationId)
-        .eq('user_id', user.id)
+      await db
+        .delete(jdSummaries)
+        .where(
+          and(
+            eq(jdSummaries.application_id, applicationId),
+            eq(jdSummaries.user_id, userId)
+          )
+        )
     } else {
       // 기존 요약 확인 (캐시)
-      const { data: existingSummary } = await supabase
-        .from('jd_summaries')
-        .select('*')
-        .eq('application_id', applicationId)
-        .eq('user_id', user.id)
-        .single()
+      const [existingSummary] = await db
+        .select()
+        .from(jdSummaries)
+        .where(
+          and(
+            eq(jdSummaries.application_id, applicationId),
+            eq(jdSummaries.user_id, userId)
+          )
+        )
+        .limit(1)
 
       if (existingSummary) {
         return NextResponse.json({
@@ -79,14 +87,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Application 조회
-    const { data: application, error: appError } = await supabase
-      .from('applications')
-      .select('*')
-      .eq('id', applicationId)
-      .eq('user_id', user.id)
-      .single()
+    const [application] = await db
+      .select()
+      .from(applications)
+      .where(
+        and(eq(applications.id, applicationId), eq(applications.user_id, userId))
+      )
+      .limit(1)
 
-    if (appError || !application) {
+    if (!application) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: '지원 내역을 찾을 수 없습니다' } },
         { status: 404 }
@@ -122,17 +131,22 @@ export async function POST(request: NextRequest) {
     }
 
     // 요약 저장
-    const { data: savedSummary, error: saveError } = await supabase
-      .from('jd_summaries')
-      .insert({
-        application_id: applicationId,
-        user_id: user.id,
-        summary,
-      })
-      .select()
-      .single()
+    try {
+      const [savedSummary] = await db
+        .insert(jdSummaries)
+        .values({
+          application_id: applicationId,
+          user_id: userId,
+          summary,
+        })
+        .returning()
 
-    if (saveError) {
+      return NextResponse.json({
+        success: true,
+        data: savedSummary,
+        cached: false,
+      })
+    } catch (saveError) {
       console.error('Save error:', saveError)
       // 저장 실패해도 요약은 반환
       return NextResponse.json({
@@ -141,12 +155,6 @@ export async function POST(request: NextRequest) {
         cached: false,
       })
     }
-
-    return NextResponse.json({
-      success: true,
-      data: savedSummary,
-      cached: false,
-    })
 
   } catch (error) {
     console.error('Summarize API error:', error)
@@ -160,11 +168,9 @@ export async function POST(request: NextRequest) {
 // GET: 기존 요약 조회
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
     // 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
@@ -182,14 +188,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { data: summary, error } = await supabase
-      .from('jd_summaries')
-      .select('*')
-      .eq('application_id', applicationId)
-      .eq('user_id', user.id)
-      .single()
+    const [summary] = await db
+      .select()
+      .from(jdSummaries)
+      .where(
+        and(
+          eq(jdSummaries.application_id, parsed.data),
+          eq(jdSummaries.user_id, userId)
+        )
+      )
+      .limit(1)
 
-    if (error || !summary) {
+    if (!summary) {
       return NextResponse.json({
         success: true,
         data: null,
