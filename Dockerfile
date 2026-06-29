@@ -29,5 +29,5 @@ FROM build AS runtime
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 EXPOSE 3000
-# 시작 시 DB 마이그레이션 적용 후 Next.js 기동
-CMD ["sh", "-c", "node apps/web/scripts/migrate.mjs && pnpm --filter web start"]
+# 시작 시 DB 마이그레이션 적용 후 Next.js 기동 (단일 셸 스크립트)
+CMD ["sh", "/app/apps/web/scripts/start.sh"]
