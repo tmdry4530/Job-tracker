@@ -10,7 +10,7 @@ import type { StoredAuth, AuthMessage } from '~lib/types'
 export const config: PlasmoCSConfig = {
   matches: [
     'http://localhost:3000/*',
-    'https://job-tracker-web-omega.vercel.app/*',
+    'https://*.up.railway.app/*',
   ],
   run_at: 'document_idle',
 }

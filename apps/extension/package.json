@@ -38,7 +38,7 @@
       "https://www.wanted.co.kr/*",
       "https://www.saramin.co.kr/*",
       "http://localhost:3000/*",
-      "https://job-tracker-web-omega.vercel.app/*"
+      "https://*.up.railway.app/*"
     ],
     "permissions": [
       "storage",
