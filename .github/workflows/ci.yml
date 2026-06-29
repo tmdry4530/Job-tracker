@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 동일 ref의 이전 실행은 취소(중복 빌드 방지)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: type-check · test · lint · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # packageManager 필드(pnpm 버전)를 자동으로 따른다
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # shared의 dist/타입이 있어야 web·extension type-check가 통과
+      - name: Build shared
+        run: pnpm --filter @job-tracker/shared build
+
+      - name: Type-check (all packages)
+        run: pnpm -r type-check
+
+      - name: Test (all packages)
+        run: pnpm -r test
+
+      - name: Lint (web)
+        run: pnpm --filter web lint
+
+      # 라우트/번들 회귀 검출 (런타임 아님 — 빌드용 더미 env)
+      - name: Build web
+        env:
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+          AUTH_SECRET: ci-dummy-secret-00000000000000000000000000000000
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: pnpm --filter web build
