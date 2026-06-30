@@ -13,13 +13,12 @@
 
 import crypto from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { paymentHistory, subscriptions } from '@/lib/db/schema'
 import {
   updateSubscription,
   createPaymentHistory,
-  renewSubscription,
 } from '@/lib/queries/subscription'
 import { getPayment } from '@/lib/toss'
 
@@ -134,21 +133,41 @@ export async function POST(request: Request) {
             .limit(1)
 
           if (subscription) {
-            // 구독 갱신 (subscription.user_id로 이중 격리)
-            await renewSubscription(subscription.user_id, subscription.id)
+            // 갱신 + 결제 내역 기록을 한 트랜잭션으로 묶어 "갱신만 되고 내역 누락" 같은
+            // 부분 기록을 방지한다. (금액/상태는 Toss 응답(verified)에서만 가져온다)
+            const paymentKey = data.paymentKey // 위 가드에서 string으로 좁혀진 값을 클로저용으로 고정
+            const paid = verified.data
+            const now = new Date()
+            const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 
-            // 결제 내역 추가 — 금액/상태는 Toss 응답(verified)에서 가져온다.
-            await createPaymentHistory({
-              user_id: subscription.user_id,
-              subscription_id: subscription.id,
-              payment_key: data.paymentKey,
-              order_id: verified.data.orderId,
-              amount: verified.data.totalAmount,
-              status: 'completed',
-              payment_method: verified.data.method || null,
-              paid_at: verified.data.approvedAt || new Date().toISOString(),
-              failed_reason: null,
-              receipt_url: verified.data.receipt?.url || null,
+            await db.transaction(async (tx) => {
+              // 구독 갱신 (subscription.user_id로 이중 격리)
+              await tx
+                .update(subscriptions)
+                .set({
+                  current_period_start: now.toISOString(),
+                  current_period_end: nextMonth.toISOString(),
+                  status: 'active',
+                })
+                .where(
+                  and(
+                    eq(subscriptions.id, subscription.id),
+                    eq(subscriptions.user_id, subscription.user_id)
+                  )
+                )
+
+              await tx.insert(paymentHistory).values({
+                user_id: subscription.user_id,
+                subscription_id: subscription.id,
+                payment_key: paymentKey,
+                order_id: paid.orderId,
+                amount: paid.totalAmount,
+                status: 'completed',
+                payment_method: paid.method || null,
+                paid_at: paid.approvedAt || new Date().toISOString(),
+                failed_reason: null,
+                receipt_url: paid.receipt?.url || null,
+              })
             })
           }
         }

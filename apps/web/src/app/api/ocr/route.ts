@@ -47,6 +47,7 @@ function isPrivateIpv4(ip: string): boolean {
   if (a === 169 && b === 254) return true // 169.254.0.0/16 (link-local)
   if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12
   if (a === 192 && b === 168) return true // 192.168.0.0/16
+  if (a === 100 && b >= 64 && b <= 127) return true // 100.64.0.0/10 (CGNAT)
   return false
 }
 
@@ -57,8 +58,17 @@ function isPrivateIp(ip: string): boolean {
   if (family === 6) {
     const lower = ip.toLowerCase()
     if (lower === '::1' || lower === '::') return true // loopback / unspecified
-    const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
-    if (mapped) return isPrivateIpv4(mapped[1]) // IPv4-mapped
+    // IPv4-mapped: 점10진(::ffff:127.0.0.1)·16진(::ffff:7f00:1) 두 표기 모두 처리
+    const mappedDotted = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/)
+    if (mappedDotted) return isPrivateIpv4(mappedDotted[1])
+    const mappedHex = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+    if (mappedHex) {
+      const hi = parseInt(mappedHex[1], 16)
+      const lo = parseInt(mappedHex[2], 16)
+      return isPrivateIpv4(
+        `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+      )
+    }
     if (lower.startsWith('fc') || lower.startsWith('fd')) return true // fc00::/7 (ULA)
     if (/^fe[89ab]/.test(lower)) return true // fe80::/10 (link-local)
     return false
