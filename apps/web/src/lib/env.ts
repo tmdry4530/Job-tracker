@@ -21,9 +21,10 @@ type EnvConfig = {
   AUTH_KAKAO_ID?: string
   AUTH_KAKAO_SECRET?: string
 
-  // Claude API (선택)
-  CLAUDE_API_KEY?: string
-  CLAUDE_MODEL?: string
+  // LLM — GLM (Z.ai Anthropic 호환 엔드포인트) (선택)
+  GLM_API_KEY?: string
+  GLM_MODEL?: string
+  GLM_BASE_URL?: string
 
   // Sentry (선택)
   NEXT_PUBLIC_SENTRY_DSN?: string
@@ -68,8 +69,9 @@ function validateEnv(): EnvConfig {
     AUTH_KAKAO_ID: process.env.AUTH_KAKAO_ID,
     AUTH_KAKAO_SECRET: process.env.AUTH_KAKAO_SECRET,
 
-    CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
-    CLAUDE_MODEL: process.env.CLAUDE_MODEL,
+    GLM_API_KEY: process.env.GLM_API_KEY,
+    GLM_MODEL: process.env.GLM_MODEL,
+    GLM_BASE_URL: process.env.GLM_BASE_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     SENTRY_ORG: process.env.SENTRY_ORG,
     SENTRY_PROJECT: process.env.SENTRY_PROJECT,
@@ -107,16 +109,20 @@ export const envHelpers = {
       return getEnv().NEXT_PUBLIC_APP_URL
     },
   },
-  claude: {
+  llm: {
     get apiKey() {
-      return getEnv().CLAUDE_API_KEY
+      return getEnv().GLM_API_KEY
     },
-    // 모델 ID 오버라이드(선택). 미설정 시 호출부 기본값 사용
+    // 모델 ID 오버라이드(선택). 미설정 시 호출부 기본값(glm-4.6) 사용
     get model() {
-      return getEnv().CLAUDE_MODEL
+      return getEnv().GLM_MODEL
+    },
+    // Anthropic 호환 엔드포인트 오버라이드(선택). 미설정 시 Z.ai 기본값 사용
+    get baseUrl() {
+      return getEnv().GLM_BASE_URL
     },
     get isConfigured() {
-      return !!getEnv().CLAUDE_API_KEY
+      return !!getEnv().GLM_API_KEY
     },
   },
   sentry: {
@@ -149,7 +155,7 @@ export function logEnvStatus() {
   console.log('  ✅ Database: Configured')
   console.log('  ✅ Auth.js: Configured')
   console.log(
-    `  ${config.CLAUDE_API_KEY ? '✅' : '⚠️'} Claude API: ${config.CLAUDE_API_KEY ? 'Configured' : 'Not configured'}`
+    `  ${config.GLM_API_KEY ? '✅' : '⚠️'} LLM (GLM): ${config.GLM_API_KEY ? 'Configured' : 'Not configured'}`
   )
   console.log(
     `  ${config.NEXT_PUBLIC_SENTRY_DSN ? '✅' : '⚠️'} Sentry: ${config.NEXT_PUBLIC_SENTRY_DSN ? 'Configured' : 'Not configured'}`

@@ -7,7 +7,7 @@ import {
   sendMessage,
   JD_SUMMARY_SYSTEM_PROMPT,
   createJdSummaryUserPrompt,
-} from '@/lib/claude'
+} from '@/lib/llm'
 
 /** 배치 처리 최대 개수 */
 const MAX_BATCH_SIZE = 10

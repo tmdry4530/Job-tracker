@@ -12,9 +12,9 @@
 - **Extension**: Plasmo (TypeScript, React)
 - **Frontend**: Next.js 14 (App Router, TypeScript)
 - **Backend**: Next.js API Routes
-- **Database**: Supabase (PostgreSQL)
-- **Auth**: Supabase Auth
-- **AI**: Claude API (JD 요약)
+- **Database**: Railway PostgreSQL (Drizzle ORM)
+- **Auth**: Auth.js v5 (Google/Kakao OAuth)
+- **AI**: GLM via Z.ai Anthropic 호환 API (JD 요약/면접질문)
 - **Styling**: Tailwind CSS
 
 ## Project Structure
