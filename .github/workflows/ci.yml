@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, migrate/railway-deploy]
   pull_request:
-    branches: [main]
+    branches: [main, migrate/railway-deploy]
 
 # 동일 ref의 이전 실행은 취소(중복 빌드 방지)
 concurrency:
