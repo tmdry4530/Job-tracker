@@ -67,16 +67,6 @@
         ]
       }
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before stopping, verify: 1) Are all requested tasks complete? 2) Were any files created/modified that need testing? 3) Should sprint-status.yaml be updated? Respond with a brief status summary."
-          }
-        ]
-      }
-    ],
     "SubagentStop": [
       {
         "hooks": [
