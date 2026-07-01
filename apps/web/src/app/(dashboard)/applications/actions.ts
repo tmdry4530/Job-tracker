@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { applications } from '@/lib/db/schema'
 import { requireUserId } from '@/lib/auth/get-user'
@@ -18,6 +18,11 @@ const UpdateStatusSchema = z.object({
 const DeleteApplicationSchema = z.object({
   id: UuidSchema,
 })
+
+const DeleteApplicationsSchema = z
+  .array(UuidSchema)
+  .min(1, '삭제할 항목을 선택해주세요')
+  .max(200, '한 번에 최대 200건까지 삭제할 수 있습니다')
 
 export async function updateApplicationStatus(
   id: string,
@@ -66,6 +71,31 @@ export async function deleteApplication(
 
     revalidatePath('/applications')
     return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : '삭제에 실패했습니다' }
+  }
+}
+
+export async function deleteApplications(
+  ids: string[]
+): Promise<{ success: boolean; deleted?: number; error?: string }> {
+  // Zod 검증
+  const parsed = DeleteApplicationsSchema.safeParse(ids)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message || '유효하지 않은 ID입니다' }
+  }
+
+  try {
+    const userId = await requireUserId()
+
+    await db
+      .delete(applications)
+      .where(
+        and(inArray(applications.id, parsed.data), eq(applications.user_id, userId))
+      )
+
+    revalidatePath('/applications')
+    return { success: true, deleted: parsed.data.length }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : '삭제에 실패했습니다' }
   }
