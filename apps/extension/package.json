@@ -1,7 +1,7 @@
 {
   "name": "extension",
   "displayName": "Job Application Tracker",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "채용 플랫폼 지원 현황 자동 수집",
   "author": "Wjdtm",
   "private": true,
