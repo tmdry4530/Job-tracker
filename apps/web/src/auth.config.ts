@@ -10,15 +10,14 @@ import Kakao from 'next-auth/providers/kakao'
 
 export default {
   providers: [
+    // allowDangerousEmailAccountLinking 미설정(기본 false): 미검증 이메일 기반 계정 탈취 방지
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
-      allowDangerousEmailAccountLinking: true,
     }),
     Kakao({
       clientId: process.env.AUTH_KAKAO_ID,
       clientSecret: process.env.AUTH_KAKAO_SECRET,
-      allowDangerousEmailAccountLinking: true,
     }),
   ],
   pages: {

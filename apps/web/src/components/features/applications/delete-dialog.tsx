@@ -20,9 +20,15 @@ import { deleteApplication } from '@/app/(dashboard)/applications/actions'
 
 interface DeleteDialogProps {
   applicationId: string
+  /**
+   * 삭제 성공 후 목록 페이지로 이동할지 여부.
+   * - `true`(기본값): `/applications`로 이동 (상세 페이지용 동작).
+   * - `false`: 현재 페이지에 머무르며 `router.refresh()`로 갱신 (목록용 동작).
+   */
+  redirect?: boolean
 }
 
-export function DeleteDialog({ applicationId }: DeleteDialogProps) {
+export function DeleteDialog({ applicationId, redirect = true }: DeleteDialogProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -38,7 +44,12 @@ export function DeleteDialog({ applicationId }: DeleteDialogProps) {
 
       toast.success('삭제되었습니다')
       setOpen(false)
-      router.push('/applications')
+
+      if (redirect) {
+        router.push('/applications')
+      } else {
+        router.refresh()
+      }
     })
   }
 

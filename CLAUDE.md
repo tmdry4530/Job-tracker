@@ -12,9 +12,9 @@
 - **Extension**: Plasmo (TypeScript, React)
 - **Frontend**: Next.js 14 (App Router, TypeScript)
 - **Backend**: Next.js API Routes
-- **Database**: Supabase (PostgreSQL)
-- **Auth**: Supabase Auth
-- **AI**: Claude API (JD 요약)
+- **Database**: Railway PostgreSQL (Drizzle ORM)
+- **Auth**: Auth.js v5 (Google/Kakao OAuth)
+- **AI**: GLM via Z.ai Anthropic 호환 API (JD 요약/면접질문)
 - **Styling**: Tailwind CSS
 
 ## Project Structure
@@ -70,6 +70,15 @@ pnpm lint
 1. 코드 수정 전 관련 파일 먼저 읽고 이해
 2. 테스트 통과 확인 후 커밋
 3. 타입 안전성 유지 (shared 패키지의 타입 활용)
+
+## ⚠️ 익스텐션 프로덕션 빌드 함정
+
+Plasmo는 빌드 시 `.env.local`을 `.env.production`보다 **우선** 로드한다. 따라서 `.env.local`에 개발용 `PLASMO_PUBLIC_DASHBOARD_URL=http://localhost:3000`이 남아 있으면, 프로덕션 빌드(`build:prod`/`package:prod`)가 **조용히 localhost를 가리키는** 익스텐션을 만들어낸다(에러 없이 잘못된 URL).
+
+prod 빌드 전 반드시 둘 중 하나:
+
+- `.env.local`을 임시로 비활성화(예: `.env.local.bak`으로 이름 변경)하거나,
+- `PLASMO_PUBLIC_DASHBOARD_URL`을 빌드 명령에 직접 주입한다.
 
 ## 금지 사항
 

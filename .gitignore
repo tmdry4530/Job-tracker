@@ -13,6 +13,8 @@ out/
 .env
 .env.local
 .env.*.local
+# 운영 시크릿/URL이 담기는 .env.production은 커밋 금지(.env.development/.env.example은 추적 유지)
+.env.production
 
 # IDE
 .idea/

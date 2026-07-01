@@ -13,13 +13,12 @@
 
 import crypto from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { paymentHistory, subscriptions } from '@/lib/db/schema'
 import {
   updateSubscription,
   createPaymentHistory,
-  renewSubscription,
 } from '@/lib/queries/subscription'
 import { getPayment } from '@/lib/toss'
 
@@ -46,8 +45,9 @@ interface TossWebhookPayload {
 /** 원문 바디에 대한 HMAC-SHA256 서명 검증 (TOSS_WEBHOOK_SECRET 설정 시) */
 function verifySignature(rawBody: string, signature: string | null): boolean {
   const secret = process.env.TOSS_WEBHOOK_SECRET
-  // 시크릿 미설정 시 서명 검증은 건너뛴다(금액 이벤트는 아래 Toss 재검증으로 방어).
-  if (!secret) return true
+  // fail-closed: 운영에서 시크릿이 없으면 검증 실패로 처리해 위조 웹훅을 차단한다.
+  // (개발 환경에서만 미설정을 허용해 로컬 테스트 편의를 제공 — 운영에서는 절대 통과 안 됨)
+  if (!secret) return process.env.NODE_ENV !== 'production'
   if (!signature) return false
 
   const expected = crypto
@@ -84,7 +84,10 @@ export async function POST(request: Request) {
 
     switch (eventType) {
       case 'BILLING_KEY.DELETED': {
-        // 빌링키 삭제됨 - 구독 취소 처리 (서명 검증으로만 보호되는 이벤트)
+        // 빌링키 삭제됨 - 구독 취소 처리.
+        // 한계: Toss는 빌링키 상태 조회 API를 제공하지 않으므로 금액 이벤트처럼 재조회로 권위 값을
+        //   확인할 수 없다. 따라서 이 이벤트는 fail-closed HMAC 서명 검증(위 verifySignature)이
+        //   유일한 진위 보증이다 — 서명 검증을 통과한 요청만 여기 도달하므로 위조 취소를 차단한다.
         if (data.customerKey) {
           try {
             await db
@@ -113,6 +116,16 @@ export async function POST(request: Request) {
             )
           }
 
+          // 멱등성: 동일 paymentKey가 이미 기록돼 있으면 갱신/삽입을 건너뛴다(웹훅 중복 전송 방지).
+          const [existingPayment] = await db
+            .select({ id: paymentHistory.id })
+            .from(paymentHistory)
+            .where(eq(paymentHistory.payment_key, data.paymentKey))
+            .limit(1)
+          if (existingPayment) {
+            return NextResponse.json({ success: true, idempotent: true })
+          }
+
           const [subscription] = await db
             .select()
             .from(subscriptions)
@@ -120,21 +133,41 @@ export async function POST(request: Request) {
             .limit(1)
 
           if (subscription) {
-            // 구독 갱신 (subscription.user_id로 이중 격리)
-            await renewSubscription(subscription.user_id, subscription.id)
+            // 갱신 + 결제 내역 기록을 한 트랜잭션으로 묶어 "갱신만 되고 내역 누락" 같은
+            // 부분 기록을 방지한다. (금액/상태는 Toss 응답(verified)에서만 가져온다)
+            const paymentKey = data.paymentKey // 위 가드에서 string으로 좁혀진 값을 클로저용으로 고정
+            const paid = verified.data
+            const now = new Date()
+            const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 
-            // 결제 내역 추가 — 금액/상태는 Toss 응답(verified)에서 가져온다.
-            await createPaymentHistory({
-              user_id: subscription.user_id,
-              subscription_id: subscription.id,
-              payment_key: data.paymentKey,
-              order_id: verified.data.orderId,
-              amount: verified.data.totalAmount,
-              status: 'completed',
-              payment_method: verified.data.method || null,
-              paid_at: verified.data.approvedAt || new Date().toISOString(),
-              failed_reason: null,
-              receipt_url: verified.data.receipt?.url || null,
+            await db.transaction(async (tx) => {
+              // 구독 갱신 (subscription.user_id로 이중 격리)
+              await tx
+                .update(subscriptions)
+                .set({
+                  current_period_start: now.toISOString(),
+                  current_period_end: nextMonth.toISOString(),
+                  status: 'active',
+                })
+                .where(
+                  and(
+                    eq(subscriptions.id, subscription.id),
+                    eq(subscriptions.user_id, subscription.user_id)
+                  )
+                )
+
+              await tx.insert(paymentHistory).values({
+                user_id: subscription.user_id,
+                subscription_id: subscription.id,
+                payment_key: paymentKey,
+                order_id: paid.orderId,
+                amount: paid.totalAmount,
+                status: 'completed',
+                payment_method: paid.method || null,
+                paid_at: paid.approvedAt || new Date().toISOString(),
+                failed_reason: null,
+                receipt_url: paid.receipt?.url || null,
+              })
             })
           }
         }

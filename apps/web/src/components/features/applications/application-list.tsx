@@ -15,6 +15,7 @@ import { EmptyState } from './empty-state'
 import { BookmarkButton } from './bookmark-button'
 import { ApplicationCard } from './application-card'
 import { DeadlineBadge } from './deadline-badge'
+import { DeleteDialog } from './delete-dialog'
 import type { Application } from '@job-tracker/shared'
 
 interface ApplicationListProps {
@@ -45,6 +46,7 @@ export function ApplicationList({ applications }: ApplicationListProps) {
               <TableHead>회사명</TableHead>
               <TableHead>포지션</TableHead>
               <TableHead className="w-[100px]">마감일</TableHead>
+              <TableHead className="w-[50px]"><span className="sr-only">작업</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -78,6 +80,9 @@ export function ApplicationList({ applications }: ApplicationListProps) {
                 </TableCell>
                 <TableCell>
                   <DeadlineBadge deadline={application.deadline} />
+                </TableCell>
+                <TableCell className="pl-0 text-right">
+                  <DeleteDialog applicationId={application.id} redirect={false} />
                 </TableCell>
               </TableRow>
             ))}

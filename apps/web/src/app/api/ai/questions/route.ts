@@ -8,7 +8,7 @@ import {
   sendMessage,
   INTERVIEW_QUESTIONS_SYSTEM_PROMPT,
   createInterviewQuestionsUserPrompt,
-} from '@/lib/claude'
+} from '@/lib/llm'
 import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 import type { QuestionCategory } from '@job-tracker/shared'
 
