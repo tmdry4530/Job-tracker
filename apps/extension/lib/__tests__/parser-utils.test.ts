@@ -2,6 +2,7 @@
  * Parser Utils 테스트
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { parseJobkoreaScrapList } from '../jobkorea-parser'
 
 describe('parser-utils', () => {
   describe('normalizeStatus', () => {
@@ -136,6 +137,86 @@ describe('parser-utils', () => {
 
         expect(cleaned).toBe(expected)
       })
+    })
+  })
+
+  describe('parseJobkoreaScrapList', () => {
+    // 잡코리아 스크랩 목록은 전체가 하나의 <form>으로 감싸여 있다.
+    // 각 공고(infoCol)의 회사명은 반드시 해당 항목 스코프에서 추출되어야 하며,
+    // form/document 스코프에서 추출하면 첫 항목 회사명이 모든 항목에 복제된다(회귀 버그).
+    function buildScrapList(
+      entries: { company: string; position: string; giId: string; coId: string }[]
+    ): HTMLElement {
+      const container = document.createElement('div')
+      container.className = 'tableList scrap-list'
+
+      // 모든 공고를 감싸는 단일 form (버그 재현의 핵심)
+      const form = document.createElement('form')
+      container.appendChild(form)
+
+      for (const entry of entries) {
+        const row = document.createElement('tr')
+
+        const infoCol = document.createElement('div')
+        infoCol.className = 'col infoCol'
+
+        const titArea = document.createElement('strong')
+        titArea.className = 'titArea'
+        const positionLink = document.createElement('a')
+        positionLink.setAttribute('href', `/Recruit/GI_Read/${entry.giId}`)
+        positionLink.textContent = entry.position
+        titArea.appendChild(positionLink)
+
+        const list = document.createElement('ul')
+        list.className = 'list-inline'
+        const li = document.createElement('li')
+        const companyLink = document.createElement('a')
+        companyLink.setAttribute('href', `/Recruit/Co_read/${entry.coId}`)
+        companyLink.textContent = entry.company
+        li.appendChild(companyLink)
+        list.appendChild(li)
+
+        infoCol.appendChild(titArea)
+        infoCol.appendChild(list)
+        row.appendChild(infoCol)
+        form.appendChild(row)
+      }
+
+      return container
+    }
+
+    it('공고별로 각자의 회사명을 유지해야 한다 (첫 항목 회사명 복제 방지)', () => {
+      const container = buildScrapList([
+        { company: '토스', position: '프론트엔드 개발자', giId: '1001', coId: '1' },
+        { company: '카카오', position: '백엔드 개발자', giId: '1002', coId: '2' },
+        { company: '네이버', position: '데이터 엔지니어', giId: '1003', coId: '3' },
+      ])
+
+      const result = parseJobkoreaScrapList(container)
+
+      expect(result).toHaveLength(3)
+      expect(result.map((a) => a.companyName)).toEqual(['토스', '카카오', '네이버'])
+      // 각 공고의 포지션/URL도 항목별로 유지되어야 한다
+      expect(result.map((a) => a.position)).toEqual([
+        '프론트엔드 개발자',
+        '백엔드 개발자',
+        '데이터 엔지니어',
+      ])
+      expect(result[1].sourceUrl).toBe('https://www.jobkorea.co.kr/Recruit/GI_Read/1002')
+    })
+
+    it('회사 링크가 없으면 "알 수 없음"으로 대체한다', () => {
+      const container = buildScrapList([
+        { company: '토스', position: '프론트엔드 개발자', giId: '1001', coId: '1' },
+      ])
+      // 회사 링크 제거
+      const companyLink = container.querySelector('ul.list-inline a')
+      companyLink?.parentElement?.removeChild(companyLink)
+
+      const result = parseJobkoreaScrapList(container)
+
+      expect(result).toHaveLength(1)
+      expect(result[0].companyName).toBe('알 수 없음')
     })
   })
 })
