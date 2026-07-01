@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { PlatformBadge } from './platform-badge'
 import { BookmarkButton } from './bookmark-button'
 import { DeadlineBadge } from './deadline-badge'
+import { DeleteDialog } from './delete-dialog'
 import type { Application } from '@job-tracker/shared'
 
 interface ApplicationCardProps {
@@ -39,11 +40,14 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
               <DeadlineBadge deadline={application.deadline} />
             </div>
           </div>
-          <BookmarkButton
-            applicationId={application.id}
-            isBookmarked={application.is_favorite}
-            size="sm"
-          />
+          <div className="flex items-center gap-1">
+            <BookmarkButton
+              applicationId={application.id}
+              isBookmarked={application.is_favorite}
+              size="sm"
+            />
+            <DeleteDialog applicationId={application.id} redirect={false} />
+          </div>
         </div>
         <Link
           href={`/applications/${application.id}`}

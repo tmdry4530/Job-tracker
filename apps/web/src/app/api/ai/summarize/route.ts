@@ -8,7 +8,7 @@ import {
   sendMessage,
   JD_SUMMARY_SYSTEM_PROMPT,
   createJdSummaryUserPrompt,
-} from '@/lib/claude'
+} from '@/lib/llm'
 import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 
 const SummarizeRequestSchema = z.object({

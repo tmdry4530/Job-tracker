@@ -1,7 +1,7 @@
 {
   "name": "extension",
   "displayName": "Job Application Tracker",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "description": "채용 플랫폼 지원 현황 자동 수집",
   "author": "Wjdtm",
   "private": true,
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@job-tracker/shared": "workspace:*",
-    "plasmo": "^0.89.0",
+    "plasmo": "^0.90.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
