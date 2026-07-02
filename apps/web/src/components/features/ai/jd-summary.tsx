@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import ReactMarkdown from 'react-markdown'
+import { LlmKeyNotice, LLM_KEY_NOT_SET_CODE } from './llm-key-notice'
 
 interface JdSummaryProps {
   applicationId: string
@@ -27,6 +28,7 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
   const [isLoading, setIsLoading] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [noKey, setNoKey] = useState(false)
 
   const fetchSummary = useCallback(async () => {
     setIsLoading(true)
@@ -55,6 +57,7 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
 
     setIsGenerating(true)
     setError(null)
+    setNoKey(false)
 
     try {
       const response = await fetch('/api/ai/summarize', {
@@ -67,9 +70,12 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
 
       if (result.success && result.data) {
         setSummary(result.data)
+      } else if (result.error?.code === LLM_KEY_NOT_SET_CODE) {
+        // 키 미설정: 자동 생성 경로에서는 조용히 안내 상태로 전환
+        setNoKey(true)
       }
-    } catch (err) {
-      console.error('Failed to auto-generate summary:', err)
+    } catch {
+      // 자동 생성 실패는 조용히 무시 (수동 생성 버튼으로 재시도 가능)
     } finally {
       setIsGenerating(false)
     }
@@ -93,6 +99,7 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
   async function generateSummary() {
     setIsGenerating(true)
     setError(null)
+    setNoKey(false)
 
     try {
       const response = await fetch('/api/ai/summarize', {
@@ -104,6 +111,11 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
       const result = await response.json()
 
       if (!result.success) {
+        // 키 미설정: 일반 에러 토스트 대신 인라인 안내 표시
+        if (result.error?.code === LLM_KEY_NOT_SET_CODE) {
+          setNoKey(true)
+          return
+        }
         throw new Error(result.error?.message || '요약 생성에 실패했습니다')
       }
 
@@ -188,6 +200,23 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
     )
   }
 
+  // API 키 미설정: 일반 에러 대신 친절한 인라인 안내
+  if (noKey) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-purple-500" />
+            AI 요약
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LlmKeyNotice />
+        </CardContent>
+      </Card>
+    )
+  }
+
   if (error) {
     return (
       <Card>
@@ -256,6 +285,7 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
   async function regenerateSummary() {
     setIsGenerating(true)
     setError(null)
+    setNoKey(false)
 
     try {
       // 기존 요약 삭제 후 새로 생성
@@ -268,6 +298,11 @@ export function JdSummary({ applicationId, hasJdContent, isImageBasedJd, sourceU
       const result = await response.json()
 
       if (!result.success) {
+        // 키 미설정: 일반 에러 토스트 대신 인라인 안내 표시
+        if (result.error?.code === LLM_KEY_NOT_SET_CODE) {
+          setNoKey(true)
+          return
+        }
         throw new Error(result.error?.message || '요약 생성에 실패했습니다')
       }
 

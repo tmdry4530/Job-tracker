@@ -1,4 +1,9 @@
-export { getLlmClient, sendMessage } from './client'
+export {
+  sendMessage,
+  LlmApiKeyMissingError,
+  DEFAULT_BASE_URL,
+  DEFAULT_MODEL,
+} from './client'
 export type { LlmOptions } from './client'
 export {
   JD_SUMMARY_SYSTEM_PROMPT,
