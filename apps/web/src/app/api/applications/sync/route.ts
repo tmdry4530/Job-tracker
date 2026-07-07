@@ -4,7 +4,7 @@
  * 익스텐션이 수집한 북마크/스크랩 공고를 Bearer 토큰으로 동기화한다.
  * - (user_id, source_url) 기준 upsert
  * - 기존 jd_content는 coalesce로 절대 덮어쓰지 않음
- * - 무료 플랜 100건 제한 트리거는 항목별 try/catch로 처리
+ * - 개수 제한 없음(무료 서비스). 항목별 실패는 try/catch로 격리해 나머지를 계속 처리
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 
       syncedCount++
     } catch (error) {
-      // 무료 플랜 제한 트리거 등으로 실패한 항목은 스킵
+      // 개별 항목 저장 실패는 스킵하고 나머지 계속 처리
       console.error('[Sync API] Item error:', error)
       skippedCount++
     }

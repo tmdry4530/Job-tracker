@@ -15,27 +15,22 @@ type EnvConfig = {
   // App
   NEXT_PUBLIC_APP_URL?: string
 
+  // BYOK: 사용자 API 키 암호화 키 (base64 32바이트).
+  // 선택 — 미설정 시 앱은 정상 부팅되고 AI(BYOK) 기능만 비활성화된다.
+  // (실제 검증은 encryption.ts가 encrypt/decrypt 호출 시점에 수행)
+  ENCRYPTION_KEY?: string
+
   // OAuth (선택)
   AUTH_GOOGLE_ID?: string
   AUTH_GOOGLE_SECRET?: string
   AUTH_KAKAO_ID?: string
   AUTH_KAKAO_SECRET?: string
 
-  // LLM — GLM (Z.ai Anthropic 호환 엔드포인트) (선택)
-  GLM_API_KEY?: string
-  GLM_MODEL?: string
-  GLM_BASE_URL?: string
-
   // Sentry (선택)
   NEXT_PUBLIC_SENTRY_DSN?: string
   SENTRY_ORG?: string
   SENTRY_PROJECT?: string
   SENTRY_AUTH_TOKEN?: string
-
-  // Toss Payments (선택)
-  NEXT_PUBLIC_TOSS_CLIENT_KEY?: string
-  TOSS_SECRET_KEY?: string
-  TOSS_WEBHOOK_SECRET?: string
 }
 
 type RequiredEnvKeys = 'DATABASE_URL' | 'AUTH_SECRET'
@@ -64,21 +59,16 @@ function validateEnv(): EnvConfig {
     AUTH_SECRET: process.env.AUTH_SECRET!,
 
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
     AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID,
     AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET,
     AUTH_KAKAO_ID: process.env.AUTH_KAKAO_ID,
     AUTH_KAKAO_SECRET: process.env.AUTH_KAKAO_SECRET,
 
-    GLM_API_KEY: process.env.GLM_API_KEY,
-    GLM_MODEL: process.env.GLM_MODEL,
-    GLM_BASE_URL: process.env.GLM_BASE_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     SENTRY_ORG: process.env.SENTRY_ORG,
     SENTRY_PROJECT: process.env.SENTRY_PROJECT,
     SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
-    NEXT_PUBLIC_TOSS_CLIENT_KEY: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY,
-    TOSS_SECRET_KEY: process.env.TOSS_SECRET_KEY,
-    TOSS_WEBHOOK_SECRET: process.env.TOSS_WEBHOOK_SECRET,
   }
 }
 
@@ -109,20 +99,11 @@ export const envHelpers = {
       return getEnv().NEXT_PUBLIC_APP_URL
     },
   },
-  llm: {
-    get apiKey() {
-      return getEnv().GLM_API_KEY
-    },
-    // 모델 ID 오버라이드(선택). 미설정 시 호출부 기본값(glm-4.6) 사용
-    get model() {
-      return getEnv().GLM_MODEL
-    },
-    // Anthropic 호환 엔드포인트 오버라이드(선택). 미설정 시 Z.ai 기본값 사용
-    get baseUrl() {
-      return getEnv().GLM_BASE_URL
-    },
+  // BYOK: 공유 LLM 키는 없다(사용자별 암호화 저장). 암호화 마스터 키는
+  // encryption.ts가 process.env.ENCRYPTION_KEY를 직접 읽어 호출 시점에 검증한다.
+  crypto: {
     get isConfigured() {
-      return !!getEnv().GLM_API_KEY
+      return !!getEnv().ENCRYPTION_KEY
     },
   },
   sentry: {
@@ -131,17 +112,6 @@ export const envHelpers = {
     },
     get isConfigured() {
       return !!getEnv().NEXT_PUBLIC_SENTRY_DSN
-    },
-  },
-  toss: {
-    get clientKey() {
-      return getEnv().NEXT_PUBLIC_TOSS_CLIENT_KEY
-    },
-    get secretKey() {
-      return getEnv().TOSS_SECRET_KEY
-    },
-    get isConfigured() {
-      return !!getEnv().NEXT_PUBLIC_TOSS_CLIENT_KEY && !!getEnv().TOSS_SECRET_KEY
     },
   },
 }
@@ -155,13 +125,11 @@ export function logEnvStatus() {
   console.log('  ✅ Database: Configured')
   console.log('  ✅ Auth.js: Configured')
   console.log(
-    `  ${config.GLM_API_KEY ? '✅' : '⚠️'} LLM (GLM): ${config.GLM_API_KEY ? 'Configured' : 'Not configured'}`
+    `  ${config.ENCRYPTION_KEY ? '✅' : '⚠️'} Encryption (BYOK): ${config.ENCRYPTION_KEY ? 'Configured' : 'Not set — AI 기능 비활성'}`
   )
+  console.log('  ℹ️  LLM: BYOK — 사용자별 키 (환경변수 아님)')
   console.log(
     `  ${config.NEXT_PUBLIC_SENTRY_DSN ? '✅' : '⚠️'} Sentry: ${config.NEXT_PUBLIC_SENTRY_DSN ? 'Configured' : 'Not configured'}`
-  )
-  console.log(
-    `  ${envHelpers.toss.isConfigured ? '✅' : '⚠️'} Toss Payments: ${envHelpers.toss.isConfigured ? 'Configured' : 'Not configured'}`
   )
   console.log('')
 }

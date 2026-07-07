@@ -186,7 +186,32 @@ export const interviewQuestions = pgTable(
   })
 )
 
+/** 사용자별 LLM 설정 (BYOK — 본인 API 키를 암호화 저장) */
+export const userLlmSettings = pgTable(
+  'user_llm_settings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    user_id: uuid('user_id')
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    api_key_encrypted: text('api_key_encrypted'),
+    base_url: text('base_url'),
+    model: text('model'),
+    created_at: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    userIdIdx: index('idx_user_llm_settings_user_id').on(t.user_id),
+  })
+)
+
 /** 사용자 플랜 (free / premium) */
+// deprecated: BYOK 무료 전환으로 미사용 (마이그레이션 안전 위해 테이블 정의 유지)
 export const userPlans = pgTable(
   'user_plans',
   {
@@ -222,6 +247,7 @@ export const userPlans = pgTable(
 )
 
 /** 구독 (토스페이먼츠 정기결제) */
+// deprecated: BYOK 무료 전환으로 미사용 (마이그레이션 안전 위해 테이블 정의 유지)
 export const subscriptions = pgTable(
   'subscriptions',
   {
@@ -269,6 +295,7 @@ export const subscriptions = pgTable(
 )
 
 /** 결제 내역 */
+// deprecated: BYOK 무료 전환으로 미사용 (마이그레이션 안전 위해 테이블 정의 유지)
 export const paymentHistory = pgTable(
   'payment_history',
   {

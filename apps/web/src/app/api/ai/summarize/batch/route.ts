@@ -8,6 +8,7 @@ import {
   JD_SUMMARY_SYSTEM_PROMPT,
   createJdSummaryUserPrompt,
 } from '@/lib/llm'
+import { getUserLlmSettings } from '@/lib/queries/llm-settings'
 
 /** 배치 처리 최대 개수 */
 const MAX_BATCH_SIZE = 10
@@ -29,6 +30,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } },
         { status: 401 }
+      )
+    }
+
+    // BYOK: 사용자 본인 API 키 확인 (없으면 모델 호출 없이 400)
+    const llmSettings = await getUserLlmSettings(userId)
+    if (!llmSettings.apiKey) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'LLM_KEY_NOT_SET',
+            message: 'AI 기능을 사용하려면 설정에서 본인 API 키를 입력하세요',
+          },
+        },
+        { status: 400 }
       )
     }
 
@@ -92,6 +108,9 @@ export async function POST(request: NextRequest) {
         )
 
         const summary = await sendMessage(JD_SUMMARY_SYSTEM_PROMPT, userPrompt, {
+          apiKey: llmSettings.apiKey,
+          baseUrl: llmSettings.baseUrl,
+          model: llmSettings.model,
           maxTokens: 2048,
           temperature: 0.5,
         })

@@ -36,32 +36,3 @@ export { isApiSuccess, isApiError } from './api';
 
 // Database types
 export type { Database } from './database';
-
-// Plan types
-export type {
-  PlanType,
-  UserPlan,
-  UserPlanInsert,
-  UserPlanUpdate,
-  PlanLimits,
-  PlanUsage,
-} from './plan';
-export { PLAN_TYPES, PLAN_LIMITS } from './plan';
-
-// Payment types
-export type {
-  PaymentStatus,
-  SubscriptionStatus,
-  Subscription,
-  SubscriptionInsert,
-  SubscriptionUpdate,
-  PaymentHistory,
-  PaymentHistoryInsert,
-  TossPaymentBillingKey,
-  TossPaymentResponse,
-  TossPaymentError,
-  CreateSubscriptionRequest,
-  CancelSubscriptionRequest,
-  PaymentResult,
-} from './payment';
-export { PREMIUM_PRICE } from './payment';

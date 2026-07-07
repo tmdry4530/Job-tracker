@@ -34,99 +34,22 @@ CREATE TRIGGER update_subscriptions_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================
--- 신규 사용자 → 무료 플랜 자동 생성 (구: auth.users 트리거)
+-- BYOK 무료 전환 정리: 결제/플랜 제한 관련 트리거·함수 제거
+-- 테이블 정의(user_plans/subscriptions/payment_history)는 마이그레이션 안전을 위해 유지하되,
+-- 아래 트리거/함수는 제거해 애플리케이션 생성이 무제한이 되도록 한다(멱등 DROP).
 -- ============================================================
-CREATE OR REPLACE FUNCTION create_user_plan()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.user_plans (user_id, plan_type, application_limit)
-  VALUES (NEW.id, 'free', 100)
-  ON CONFLICT (user_id) DO NOTHING;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS on_user_created ON users;
-CREATE TRIGGER on_user_created
-  AFTER INSERT ON users
-  FOR EACH ROW EXECUTE FUNCTION create_user_plan();
-
--- ============================================================
--- 북마크 개수 제한 확인 (free 플랜 100개)
--- ============================================================
-CREATE OR REPLACE FUNCTION check_application_limit()
-RETURNS TRIGGER AS $$
-DECLARE
-  user_plan RECORD;
-  current_count INTEGER;
-BEGIN
-  SELECT * INTO user_plan FROM user_plans WHERE user_id = NEW.user_id;
-
-  IF user_plan IS NULL THEN
-    user_plan.application_limit := 100;
-    user_plan.plan_type := 'free';
-  END IF;
-
-  IF user_plan.plan_type = 'premium' THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT COUNT(*) INTO current_count
-  FROM applications
-  WHERE user_id = NEW.user_id;
-
-  IF current_count >= user_plan.application_limit THEN
-    RAISE EXCEPTION 'Application limit reached. Please upgrade to Premium for unlimited applications.';
-  END IF;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
+-- 북마크 개수 제한 트리거/함수 제거 → 애플리케이션 생성 무제한
 DROP TRIGGER IF EXISTS check_application_limit_trigger ON applications;
-CREATE TRIGGER check_application_limit_trigger
-  BEFORE INSERT ON applications
-  FOR EACH ROW EXECUTE FUNCTION check_application_limit();
+DROP FUNCTION IF EXISTS check_application_limit();
 
--- ============================================================
--- 구독 상태 변경 → user_plans 동기화
--- ============================================================
-CREATE OR REPLACE FUNCTION sync_subscription_to_plan()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF NEW.status = 'active' THEN
-    UPDATE user_plans
-    SET plan_type = 'premium',
-        application_limit = -1,
-        premium_started_at = NEW.current_period_start,
-        premium_expires_at = NEW.current_period_end,
-        updated_at = NOW()
-    WHERE user_id = NEW.user_id;
-  ELSIF NEW.status IN ('cancelled', 'expired') THEN
-    UPDATE user_plans
-    SET plan_type = 'free',
-        application_limit = 100,
-        premium_expires_at = NULL,
-        updated_at = NOW()
-    WHERE user_id = NEW.user_id;
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
+-- 구독 상태 → 플랜 동기화 트리거/함수 제거 (유료 개념 없음)
 DROP TRIGGER IF EXISTS sync_subscription_to_plan_trigger ON subscriptions;
-CREATE TRIGGER sync_subscription_to_plan_trigger
-  AFTER INSERT OR UPDATE OF status ON subscriptions
-  FOR EACH ROW EXECUTE FUNCTION sync_subscription_to_plan();
+DROP FUNCTION IF EXISTS sync_subscription_to_plan();
 
--- ============================================================
--- 만료 구독 정리 (크론잡용)
--- ============================================================
-CREATE OR REPLACE FUNCTION check_expired_subscriptions()
-RETURNS void AS $$
-BEGIN
-  UPDATE subscriptions
-  SET status = 'expired', updated_at = NOW()
-  WHERE status = 'active' AND current_period_end < NOW();
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- 만료 구독 정리 함수 제거 (더 이상 구독 없음)
+DROP FUNCTION IF EXISTS check_expired_subscriptions();
+
+-- 신규 사용자 자동 플랜 생성 트리거/함수 제거 (플랜 제한 없음)
+DROP TRIGGER IF EXISTS on_user_created ON users;
+DROP FUNCTION IF EXISTS create_user_plan();

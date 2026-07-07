@@ -9,6 +9,7 @@ import {
   JD_SUMMARY_SYSTEM_PROMPT,
   createJdSummaryUserPrompt,
 } from '@/lib/llm'
+import { getUserLlmSettings } from '@/lib/queries/llm-settings'
 import { checkRateLimit, RATE_LIMITS, createRateLimitResponse } from '@/lib/rate-limit'
 
 const SummarizeRequestSchema = z.object({
@@ -109,6 +110,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // BYOK: 사용자 본인 API 키 확인 (없으면 모델 호출 없이 400)
+    const llmSettings = await getUserLlmSettings(userId)
+    if (!llmSettings.apiKey) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'LLM_KEY_NOT_SET',
+            message: 'AI 기능을 사용하려면 설정에서 본인 API 키를 입력하세요',
+          },
+        },
+        { status: 400 }
+      )
+    }
+
     // Claude API 호출
     let summary: string
     try {
@@ -119,6 +135,9 @@ export async function POST(request: NextRequest) {
       )
 
       summary = await sendMessage(JD_SUMMARY_SYSTEM_PROMPT, userPrompt, {
+        apiKey: llmSettings.apiKey,
+        baseUrl: llmSettings.baseUrl,
+        model: llmSettings.model,
         maxTokens: 2048,
         temperature: 0.5,
       })

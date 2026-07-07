@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/accordion'
 import { toast } from 'sonner'
 import type { QuestionCategory } from '@job-tracker/shared'
+import { LlmKeyNotice, LLM_KEY_NOT_SET_CODE } from './llm-key-notice'
 
 interface InterviewQuestionsProps {
   applicationId: string
@@ -48,6 +49,7 @@ export function InterviewQuestions({ applicationId, hasJdContent }: InterviewQue
   const [isLoading, setIsLoading] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [noKey, setNoKey] = useState(false)
 
   const fetchQuestions = useCallback(async () => {
     setIsLoading(true)
@@ -74,6 +76,7 @@ export function InterviewQuestions({ applicationId, hasJdContent }: InterviewQue
   async function generateQuestions() {
     setIsGenerating(true)
     setError(null)
+    setNoKey(false)
 
     try {
       const response = await fetch('/api/ai/questions', {
@@ -85,6 +88,11 @@ export function InterviewQuestions({ applicationId, hasJdContent }: InterviewQue
       const result = await response.json()
 
       if (!result.success) {
+        // 키 미설정: 일반 에러 토스트 대신 인라인 안내 표시
+        if (result.error?.code === LLM_KEY_NOT_SET_CODE) {
+          setNoKey(true)
+          return
+        }
         throw new Error(result.error?.message || '질문 생성에 실패했습니다')
       }
 
@@ -170,6 +178,23 @@ export function InterviewQuestions({ applicationId, hasJdContent }: InterviewQue
           <p className="text-muted-foreground text-sm">
             JD 정보가 없어 질문을 생성할 수 없습니다.
           </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // API 키 미설정: 일반 에러 대신 친절한 인라인 안내
+  if (noKey) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-blue-500" />
+            면접 예상 질문
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LlmKeyNotice />
         </CardContent>
       </Card>
     )
