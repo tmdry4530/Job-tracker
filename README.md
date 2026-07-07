@@ -1,5 +1,7 @@
 # Job Application Tracker
 
+Chrome Webstore : https://chromewebstore.google.com/detail/mcplgkcchgkjfhedkifomejdedggbobl?utm_source=item-share-cb
+
 채용 플랫폼(원티드, 사람인, 잡코리아) 북마크/스크랩 공고를 한 곳에서 통합 관리하는 서비스
 
 ## Features
